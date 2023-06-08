@@ -31,10 +31,7 @@ def nanfirst(values, axis, keepdims=False):
     axis = normalize_axis_index(axis, values.ndim)
     idx_first = np.argmax(~pd.isnull(values), axis=axis)
     result = _select_along_axis(values, idx_first, axis)
-    if keepdims:
-        return np.expand_dims(result, axis=axis)
-    else:
-        return result
+    return np.expand_dims(result, axis=axis) if keepdims else result
 
 
 def nanlast(values, axis, keepdims=False):
@@ -44,10 +41,7 @@ def nanlast(values, axis, keepdims=False):
     rev = (slice(None),) * axis + (slice(None, None, -1),)
     idx_last = -1 - np.argmax(~pd.isnull(values)[rev], axis=axis)
     result = _select_along_axis(values, idx_last, axis)
-    if keepdims:
-        return np.expand_dims(result, axis=axis)
-    else:
-        return result
+    return np.expand_dims(result, axis=axis) if keepdims else result
 
 
 def inverse_permutation(indices: np.ndarray, N: int | None = None) -> np.ndarray:

@@ -271,9 +271,7 @@ class set_options:
                     expected = f"Expected one of {_DISPLAY_OPTIONS!r}"
                 else:
                     expected = ""
-                raise ValueError(
-                    f"option {k!r} given an invalid value: {v!r}. " + expected
-                )
+                raise ValueError(f"option {k!r} given an invalid value: {v!r}. {expected}")
             self.old[k] = OPTIONS[k]
         self._apply_update(kwargs)
 

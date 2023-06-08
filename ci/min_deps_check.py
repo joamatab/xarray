@@ -61,20 +61,20 @@ def parse_requirements(fname) -> Iterator[tuple[str, int, int, int | None]]:
         if pkg.rstrip("<>") in IGNORE_DEPS:
             continue
         if pkg.endswith("<") or pkg.endswith(">") or eq != "=":
-            error("package should be pinned with exact version: " + row)
+            error(f"package should be pinned with exact version: {row}")
             continue
 
         try:
             version_tup = tuple(int(x) for x in version.split("."))
         except ValueError:
-            raise ValueError("non-numerical version: " + row)
+            raise ValueError(f"non-numerical version: {row}")
 
         if len(version_tup) == 2:
             yield (pkg, *version_tup, None)  # type: ignore[misc]
         elif len(version_tup) == 3:
             yield (pkg, *version_tup)  # type: ignore[misc]
         else:
-            raise ValueError("expected major.minor or major.minor.patch: " + row)
+            raise ValueError(f"expected major.minor or major.minor.patch: {row}")
 
 
 def query_conda(pkg: str) -> dict[tuple[int, int], datetime]:
@@ -131,13 +131,13 @@ def process_pkg(
     - publication date of version suggested by policy (YYYY-MM-DD)
     - status ("<", "=", "> (!)")
     """
-    print("Analyzing %s..." % pkg)
+    print(f"Analyzing {pkg}...")
     versions = query_conda(pkg)
 
     try:
         req_published = versions[req_major, req_minor]
     except KeyError:
-        error("not found in conda: " + pkg)
+        error(f"not found in conda: {pkg}")
         return pkg, fmt_version(req_major, req_minor, req_patch), "-", "-", "-", "(!)"
 
     policy_months = POLICY_MONTHS.get(pkg, POLICY_MONTHS_DEFAULT)
@@ -171,7 +171,7 @@ def process_pkg(
         status = "="
 
     if req_patch is not None:
-        warning("patch version should not appear in requirements file: " + pkg)
+        warning(f"patch version should not appear in requirements file: {pkg}")
         status += " (w)"
 
     return (
@@ -185,10 +185,7 @@ def process_pkg(
 
 
 def fmt_version(major: int, minor: int, patch: int = None) -> str:
-    if patch is None:
-        return f"{major}.{minor}"
-    else:
-        return f"{major}.{minor}.{patch}"
+    return f"{major}.{minor}" if patch is None else f"{major}.{minor}.{patch}"
 
 
 def main() -> None:

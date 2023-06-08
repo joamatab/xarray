@@ -110,11 +110,7 @@ def ensure_dtype_not_object(var: Variable, name: T_Name = None) -> Variable:
 
         if is_duck_dask_array(data):
             warnings.warn(
-                "variable {} has data in the form of a dask array with "
-                "dtype=object, which means it is being loaded into memory "
-                "to determine a data type that can be safely stored on disk. "
-                "To avoid this, coerce this variable to a fixed-size dtype "
-                "with astype() before saving it.".format(name),
+                f"variable {name} has data in the form of a dask array with dtype=object, which means it is being loaded into memory to determine a data type that can be safely stored on disk. To avoid this, coerce this variable to a fixed-size dtype with astype() before saving it.",
                 SerializationWarning,
             )
             data = data.compute()
@@ -436,7 +432,7 @@ def decode_cf_variables(
             )
         except Exception as e:
             raise type(e)(f"Failed to decode variable {k!r}: {e}")
-        if decode_coords in [True, "coordinates", "all"]:
+        if decode_coords in {True, "coordinates", "all"}:
             var_attrs = new_vars[k].attrs
             if "coordinates" in var_attrs:
                 coord_str = var_attrs["coordinates"]
@@ -688,12 +684,11 @@ def _encode_coordinates(variables, attributes, non_dim_coord_names):
         # we get support for attrs["coordinates"] for free.
         coords_str = pop_to(encoding, attrs, "coordinates") or attrs.get("coordinates")
         if not coords_str and variable_coordinates[name]:
-            coordinates_text = " ".join(
+            if coordinates_text := " ".join(
                 str(coord_name)
                 for coord_name in variable_coordinates[name]
                 if coord_name not in not_technically_coordinates
-            )
-            if coordinates_text:
+            ):
                 attrs["coordinates"] = coordinates_text
         if "coordinates" in attrs:
             written_coords.update(attrs["coordinates"].split())

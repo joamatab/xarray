@@ -42,10 +42,7 @@ dask_available = module_available("dask")
 
 
 def get_array_namespace(x):
-    if hasattr(x, "__array_namespace__"):
-        return x.__array_namespace__()
-    else:
-        return np
+    return x.__array_namespace__() if hasattr(x, "__array_namespace__") else np
 
 
 def _dask_or_eager_func(
@@ -132,14 +129,7 @@ def isnull(data):
         return zeros_like(data, dtype=bool)
     else:
         # at this point, array should have dtype=object
-        if isinstance(data, np.ndarray):
-            return pandas_isnull(data)
-        else:
-            # Not reachable yet, but intended for use with other duck array
-            # types. For full consistency with pandas, we should accept None as
-            # a null value as well as NaN, but it isn't clear how to do this
-            # with duck typing.
-            return data != data
+        return pandas_isnull(data) if isinstance(data, np.ndarray) else data != data
 
 
 def notnull(data):
@@ -233,10 +223,7 @@ def lazy_array_equiv(arr1, arr2):
         from dask.base import tokenize
 
         # GH3068, GH4221
-        if tokenize(arr1) == tokenize(arr2):
-            return True
-        else:
-            return None
+        return True if tokenize(arr1) == tokenize(arr2) else None
     return None
 
 
@@ -246,12 +233,11 @@ def allclose_or_equiv(arr1, arr2, rtol=1e-5, atol=1e-8):
     arr2 = asarray(arr2)
 
     lazy_equiv = lazy_array_equiv(arr1, arr2)
-    if lazy_equiv is None:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", r"All-NaN (slice|axis) encountered")
-            return bool(isclose(arr1, arr2, rtol=rtol, atol=atol, equal_nan=True).all())
-    else:
+    if lazy_equiv is not None:
         return lazy_equiv
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", r"All-NaN (slice|axis) encountered")
+        return bool(isclose(arr1, arr2, rtol=rtol, atol=atol, equal_nan=True).all())
 
 
 def array_equiv(arr1, arr2):
@@ -259,13 +245,12 @@ def array_equiv(arr1, arr2):
     arr1 = asarray(arr1)
     arr2 = asarray(arr2)
     lazy_equiv = lazy_array_equiv(arr1, arr2)
-    if lazy_equiv is None:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "In the future, 'NAT == x'")
-            flag_array = (arr1 == arr2) | (isnull(arr1) & isnull(arr2))
-            return bool(flag_array.all())
-    else:
+    if lazy_equiv is not None:
         return lazy_equiv
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "In the future, 'NAT == x'")
+        flag_array = (arr1 == arr2) | (isnull(arr1) & isnull(arr2))
+        return bool(flag_array.all())
 
 
 def array_notnull_equiv(arr1, arr2):
@@ -275,13 +260,12 @@ def array_notnull_equiv(arr1, arr2):
     arr1 = asarray(arr1)
     arr2 = asarray(arr2)
     lazy_equiv = lazy_array_equiv(arr1, arr2)
-    if lazy_equiv is None:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "In the future, 'NAT == x'")
-            flag_array = (arr1 == arr2) | isnull(arr1) | isnull(arr2)
-            return bool(flag_array.all())
-    else:
+    if lazy_equiv is not None:
         return lazy_equiv
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "In the future, 'NAT == x'")
+        flag_array = (arr1 == arr2) | isnull(arr1) | isnull(arr2)
+        return bool(flag_array.all())
 
 
 def count(data, axis=None):
@@ -291,12 +275,8 @@ def count(data, axis=None):
 
 def sum_where(data, axis=None, dtype=None, where=None):
     xp = get_array_namespace(data)
-    if where is not None:
-        a = where_method(xp.zeros_like(data), where, data)
-    else:
-        a = data
-    result = xp.sum(a, axis=axis, dtype=dtype)
-    return result
+    a = data if where is None else where_method(xp.zeros_like(data), where, data)
+    return xp.sum(a, axis=axis, dtype=dtype)
 
 
 def where(condition, x, y):
@@ -469,11 +449,7 @@ def datetime_to_numeric(array, offset=None, datetime_unit=None, dtype=float):
     """
     # Set offset to minimum if not given
     if offset is None:
-        if array.dtype.kind in "Mm":
-            offset = _datetime_nanmin(array)
-        else:
-            offset = min(array)
-
+        offset = _datetime_nanmin(array) if array.dtype.kind in "Mm" else min(array)
     # Compute timedelta object.
     # For np.datetime64, this can silently yield garbage due to overflow.
     # One option is to enforce 1970-01-01 as the universal offset.

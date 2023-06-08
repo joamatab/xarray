@@ -285,7 +285,7 @@ def get_op(name):
     return getattr(operator, op_str(name))
 
 
-NON_INPLACE_OP = {get_op("i" + name): get_op(name) for name in NUM_BINARY_OPS}
+NON_INPLACE_OP = {get_op(f"i{name}"): get_op(name) for name in NUM_BINARY_OPS}
 
 
 def inplace_to_noninplace_op(f):

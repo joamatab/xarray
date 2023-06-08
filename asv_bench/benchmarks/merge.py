@@ -9,10 +9,7 @@ class DatasetAddVariable:
 
     def setup(self, existing_elements):
         self.datasets = {}
-        # Dictionary insertion is fast(er) than xarray.Dataset insertion
-        d = {}
-        for i in range(existing_elements):
-            d[f"var{i}"] = i
+        d = {f"var{i}": i for i in range(existing_elements)}
         self.dataset = xr.merge([d])
 
         d = {f"set_2_{i}": i for i in range(existing_elements)}

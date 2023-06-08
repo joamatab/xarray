@@ -198,8 +198,7 @@ class Weighted(Generic[T_Xarray]):
             dims = [dim] if dim else []
         else:
             dims = list(dim)
-        missing_dims = set(dims) - set(self.obj.dims) - set(self.weights.dims)
-        if missing_dims:
+        if missing_dims := set(dims) - set(self.obj.dims) - set(self.weights.dims):
             raise ValueError(
                 f"{self.__class__.__name__} does not contain the dimensions: {missing_dims}"
             )

@@ -612,14 +612,15 @@ def test__mapping_repr(display_max_rows, n_vars, n_attr) -> None:
     c = defchararray.add("coord", np.arange(0, n_vars).astype(str))
     attrs = {k: 2 for k in b}
     coords = {_c: np.array([0, 1]) for _c in c}
-    data_vars = dict()
-    for v, _c in zip(a, coords.items()):
-        data_vars[v] = xr.DataArray(
+    data_vars = {
+        v: xr.DataArray(
             name=v,
             data=np.array([3, 4]),
             dims=[_c[0]],
             coords=dict([_c]),
         )
+        for v, _c in zip(a, coords.items())
+    }
     ds = xr.Dataset(data_vars)
     ds.attrs = attrs
 

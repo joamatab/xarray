@@ -45,7 +45,10 @@ def create_concat_datasets(
                     coords={
                         "lat": (["x", "y"], lat),
                         "lon": (["x", "y"], lon),
-                        "day": ["day" + str(i * 2 + 1), "day" + str(i * 2 + 2)],
+                        "day": [
+                            f"day{str(i * 2 + 1)}",
+                            f"day{str(i * 2 + 2)}",
+                        ],
                     },
                 )
             )
@@ -70,40 +73,50 @@ def create_typed_datasets(
     num_datasets: int = 2, seed: int | None = None
 ) -> list[Dataset]:
     var_strings = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    result = []
     rng = np.random.default_rng(seed)
     lat = rng.standard_normal(size=(1, 4))
     lon = rng.standard_normal(size=(1, 4))
-    for i in range(num_datasets):
-        result.append(
-            Dataset(
-                data_vars={
-                    "float": (["x", "y", "day"], rng.standard_normal(size=(1, 4, 2))),
-                    "float2": (["x", "y", "day"], rng.standard_normal(size=(1, 4, 2))),
-                    "string": (
-                        ["x", "y", "day"],
-                        rng.choice(var_strings, size=(1, 4, 2)),
+    return [
+        Dataset(
+            data_vars={
+                "float": (
+                    ["x", "y", "day"],
+                    rng.standard_normal(size=(1, 4, 2)),
+                ),
+                "float2": (
+                    ["x", "y", "day"],
+                    rng.standard_normal(size=(1, 4, 2)),
+                ),
+                "string": (
+                    ["x", "y", "day"],
+                    rng.choice(var_strings, size=(1, 4, 2)),
+                ),
+                "int": (
+                    ["x", "y", "day"],
+                    rng.integers(0, 10, size=(1, 4, 2)),
+                ),
+                "datetime64": (
+                    ["x", "y", "day"],
+                    np.arange(
+                        np.datetime64("2017-01-01"),
+                        np.datetime64("2017-01-09"),
+                    ).reshape(1, 4, 2),
+                ),
+                "timedelta64": (
+                    ["x", "y", "day"],
+                    np.reshape(
+                        [pd.Timedelta(days=i) for i in range(8)], [1, 4, 2]
                     ),
-                    "int": (["x", "y", "day"], rng.integers(0, 10, size=(1, 4, 2))),
-                    "datetime64": (
-                        ["x", "y", "day"],
-                        np.arange(
-                            np.datetime64("2017-01-01"), np.datetime64("2017-01-09")
-                        ).reshape(1, 4, 2),
-                    ),
-                    "timedelta64": (
-                        ["x", "y", "day"],
-                        np.reshape([pd.Timedelta(days=i) for i in range(8)], [1, 4, 2]),
-                    ),
-                },
-                coords={
-                    "lat": (["x", "y"], lat),
-                    "lon": (["x", "y"], lon),
-                    "day": ["day" + str(i * 2 + 1), "day" + str(i * 2 + 2)],
-                },
-            )
+                ),
+            },
+            coords={
+                "lat": (["x", "y"], lat),
+                "lon": (["x", "y"], lon),
+                "day": [f"day{str(i * 2 + 1)}", f"day{str(i * 2 + 2)}"],
+            },
         )
-    return result
+        for i in range(num_datasets)
+    ]
 
 
 def test_concat_compat() -> None:
@@ -645,11 +658,12 @@ class TestConcatDataset:
         ds1 = Dataset({"a": (("x", "y"), [[0]])}, coords={"x": [0], "y": [0]})
         ds2 = Dataset({"a": (("x", "y"), [[0]])}, coords={"x": [1], "y": [0.0001]})
 
-        expected: dict[JoinOptions, Any] = {}
-        expected["outer"] = Dataset(
-            {"a": (("x", "y"), [[0, np.nan], [np.nan, 0]])},
-            {"x": [0, 1], "y": [0, 0.0001]},
-        )
+        expected: dict[JoinOptions, Any] = {
+            "outer": Dataset(
+                {"a": (("x", "y"), [[0, np.nan], [np.nan, 0]])},
+                {"x": [0, 1], "y": [0, 0.0001]},
+            )
+        }
         expected["inner"] = Dataset(
             {"a": (("x", "y"), [[], []])}, {"x": [0, 1], "y": []}
         )
@@ -1069,11 +1083,12 @@ class TestConcatDataArray:
             {"a": (("x", "y"), [[0]])}, coords={"x": [1], "y": [0.0001]}
         ).to_array()
 
-        expected: dict[JoinOptions, Any] = {}
-        expected["outer"] = Dataset(
-            {"a": (("x", "y"), [[0, np.nan], [np.nan, 0]])},
-            {"x": [0, 1], "y": [0, 0.0001]},
-        )
+        expected: dict[JoinOptions, Any] = {
+            "outer": Dataset(
+                {"a": (("x", "y"), [[0, np.nan], [np.nan, 0]])},
+                {"x": [0, 1], "y": [0, 0.0001]},
+            )
+        }
         expected["inner"] = Dataset(
             {"a": (("x", "y"), [[], []])}, {"x": [0, 1], "y": []}
         )
@@ -1101,8 +1116,9 @@ class TestConcatDataArray:
         da1 = DataArray([0], coords=[("x", [0])], attrs={"b": 42})
         da2 = DataArray([0], coords=[("x", [1])], attrs={"b": 42, "c": 43})
 
-        expected: dict[CombineAttrsOptions, Any] = {}
-        expected["drop"] = DataArray([0, 0], coords=[("x", [0, 1])])
+        expected: dict[CombineAttrsOptions, Any] = {
+            "drop": DataArray([0, 0], coords=[("x", [0, 1])])
+        }
         expected["no_conflicts"] = DataArray(
             [0, 0], coords=[("x", [0, 1])], attrs={"b": 42, "c": 43}
         )
@@ -1190,8 +1206,8 @@ def test_concat_preserve_coordinate_order() -> None:
     data = np.zeros((4, 10, 5), dtype=bool)
 
     ds1 = Dataset(
-        {"data": (["time", "y", "x"], data[0:2])},
-        coords={"time": time[0:2], "y": y, "x": x},
+        {"data": (["time", "y", "x"], data[:2])},
+        coords={"time": time[:2], "y": y, "x": x},
     )
     ds2 = Dataset(
         {"data": (["time", "y", "x"], data[2:4])},

@@ -59,10 +59,7 @@ class NioArrayWrapper(BackendArray):
         with self.datastore.lock:
             array = self.get_array(needs_lock=False)
 
-            if key == () and self.ndim == 0:
-                return array.get_value()
-
-            return array[key]
+            return array.get_value() if key == () and self.ndim == 0 else array[key]
 
 
 class NioDataStore(AbstractDataStore):

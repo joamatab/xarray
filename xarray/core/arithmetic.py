@@ -56,19 +56,13 @@ class SupportsArithmetic:
 
         if ufunc.signature is not None:
             raise NotImplementedError(
-                "{} not supported: xarray objects do not directly implement "
-                "generalized ufuncs. Instead, use xarray.apply_ufunc or "
-                "explicitly convert to xarray objects to NumPy arrays "
-                "(e.g., with `.values`).".format(ufunc)
+                f"{ufunc} not supported: xarray objects do not directly implement generalized ufuncs. Instead, use xarray.apply_ufunc or explicitly convert to xarray objects to NumPy arrays (e.g., with `.values`)."
             )
 
         if method != "__call__":
             # TODO: support other methods, e.g., reduce and accumulate.
             raise NotImplementedError(
-                "{} method for ufunc {} is not implemented on xarray objects, "
-                "which currently only support the __call__ method. As an "
-                "alternative, consider explicitly converting xarray objects "
-                "to NumPy arrays (e.g., with `.values`).".format(method, ufunc)
+                f"{method} method for ufunc {ufunc} is not implemented on xarray objects, which currently only support the __call__ method. As an alternative, consider explicitly converting xarray objects to NumPy arrays (e.g., with `.values`)."
             )
 
         if any(isinstance(o, SupportsArithmetic) for o in out):

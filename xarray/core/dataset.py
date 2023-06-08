@@ -255,13 +255,9 @@ def _get_chunk(var: Variable, chunks, chunkmanager: ChunkManagerEntrypoint):
                 if isinstance(preferred_chunk_sizes, int)
                 else itertools.accumulate(preferred_chunk_sizes[:-1])
             )
-            # Gather any stop indices of the specified chunks that are not a stop index
-            # of a preferred chunk.  Again, omit the last stop, assuming that it equals
-            # the dim size.
-            breaks = set(itertools.accumulate(chunk_sizes[:-1])).difference(
-                preferred_stops
-            )
-            if breaks:
+            if breaks := set(
+                itertools.accumulate(chunk_sizes[:-1])
+            ).difference(preferred_stops):
                 warnings.warn(
                     "The specified chunks separate the stored chunks along "
                     f'dimension "{dim}" starting at index {min(breaks)}. This could '
@@ -314,9 +310,7 @@ def _maybe_chunk(
 
         if overwrite_encoded_chunks and var.chunks is not None:
             var.encoding["chunks"] = tuple(x[0] for x in var.chunks)
-        return var
-    else:
-        return var
+    return var
 
 
 def as_dataset(obj: Any) -> Dataset:
@@ -349,7 +343,8 @@ def _get_func_args(func, param_names):
     else:
         params = list(func_args)[1:]
         if any(
-            [(p.kind in [p.VAR_POSITIONAL, p.VAR_KEYWORD]) for p in func_args.values()]
+            p.kind in [p.VAR_POSITIONAL, p.VAR_KEYWORD]
+            for p in func_args.values()
         ):
             raise ValueError(
                 "`param_names` must be provided because `func` takes variable length arguments."
@@ -640,8 +635,7 @@ class Dataset(
         if coords is None:
             coords = {}
 
-        both_data_and_coords = set(data_vars) & set(coords)
-        if both_data_and_coords:
+        if both_data_and_coords := set(data_vars) & set(coords):
             raise ValueError(
                 f"variables {both_data_and_coords!r} are found in both data_vars and coords"
             )
@@ -810,18 +804,16 @@ class Dataset(
 
     def __dask_graph__(self):
         graphs = {k: v.__dask_graph__() for k, v in self.variables.items()}
-        graphs = {k: v for k, v in graphs.items() if v is not None}
-        if not graphs:
+        if not (graphs := {k: v for k, v in graphs.items() if v is not None}):
             return None
-        else:
-            try:
-                from dask.highlevelgraph import HighLevelGraph
+        try:
+            from dask.highlevelgraph import HighLevelGraph
 
-                return HighLevelGraph.merge(*graphs.values())
-            except ImportError:
-                from dask import sharedict
+            return HighLevelGraph.merge(*graphs.values())
+        except ImportError:
+            from dask import sharedict
 
-                return sharedict.merge(*graphs.values())
+            return sharedict.merge(*graphs.values())
 
     def __dask_keys__(self):
         import dask
@@ -959,11 +951,11 @@ class Dataset(
 
     def _persist_inplace(self: T_Dataset, **kwargs) -> T_Dataset:
         """Persist all Dask arrays in memory"""
-        # access .data to coerce everything to numpy or dask arrays
-        lazy_data = {
-            k: v._data for k, v in self.variables.items() if is_duck_dask_array(v._data)
-        }
-        if lazy_data:
+        if lazy_data := {
+            k: v._data
+            for k, v in self.variables.items()
+            if is_duck_dask_array(v._data)
+        }:
             import dask
 
             # evaluate all the dask arrays simultaneously
@@ -1054,7 +1046,7 @@ class Dataset(
                 self._indexes = indexes
             if encoding is not _default:
                 self._encoding = encoding
-            obj = self
+            return self
         else:
             if variables is None:
                 variables = self._variables.copy()
@@ -1068,10 +1060,9 @@ class Dataset(
                 indexes = self._indexes.copy()
             if encoding is _default:
                 encoding = copy.copy(self._encoding)
-            obj = self._construct_direct(
+            return self._construct_direct(
                 variables, coord_names, dims, attrs, indexes, encoding
             )
-        return obj
 
     def _replace_with_new_dims(
         self: T_Dataset,
@@ -1170,15 +1161,14 @@ class Dataset(
             variables=new_variables, coord_names=new_coord_names, indexes=new_indexes
         )
 
-        if rename_dims:
-            # skip rename indexes: they should already have the right name(s)
-            dims = replaced._rename_dims(rename_dims)
-            new_variables, new_coord_names = replaced._rename_vars({}, rename_dims)
-            return replaced._replace(
-                variables=new_variables, coord_names=new_coord_names, dims=dims
-            )
-        else:
+        if not rename_dims:
             return replaced
+        # skip rename indexes: they should already have the right name(s)
+        dims = replaced._rename_dims(rename_dims)
+        new_variables, new_coord_names = replaced._rename_vars({}, rename_dims)
+        return replaced._replace(
+            variables=new_variables, coord_names=new_coord_names, dims=dims
+        )
 
     def copy(
         self: T_Dataset, deep: bool = False, data: Mapping[Any, ArrayLike] | None = None
@@ -1295,28 +1285,23 @@ class Dataset(
         if data:
             var_keys = set(self.data_vars.keys())
             data_keys = set(data.keys())
-            keys_not_in_vars = data_keys - var_keys
-            if keys_not_in_vars:
+            if keys_not_in_vars := data_keys - var_keys:
                 raise ValueError(
-                    "Data must only contain variables in original "
-                    "dataset. Extra variables: {}".format(keys_not_in_vars)
+                    f"Data must only contain variables in original dataset. Extra variables: {keys_not_in_vars}"
                 )
-            keys_missing_from_data = var_keys - data_keys
-            if keys_missing_from_data:
+            if keys_missing_from_data := var_keys - data_keys:
                 raise ValueError(
-                    "Data must contain all variables in original "
-                    "dataset. Data is missing {}".format(keys_missing_from_data)
+                    f"Data must contain all variables in original dataset. Data is missing {keys_missing_from_data}"
                 )
 
         indexes, index_vars = self.xindexes.copy_indexes(deep=deep)
 
-        variables = {}
-        for k, v in self._variables.items():
-            if k in index_vars:
-                variables[k] = index_vars[k]
-            else:
-                variables[k] = v._copy(deep=deep, data=data.get(k), memo=memo)
-
+        variables = {
+            k: index_vars[k]
+            if k in index_vars
+            else v._copy(deep=deep, data=data.get(k), memo=memo)
+            for k, v in self._variables.items()
+        }
         attrs = copy.deepcopy(self._attrs, memo) if deep else copy.copy(self._attrs)
         encoding = (
             copy.deepcopy(self._encoding, memo) if deep else copy.copy(self._encoding)
@@ -1362,8 +1347,8 @@ class Dataset(
                     coord_names.add(var_name)
                 if (var_name,) == var.dims:
                     index, index_vars = create_default_index_implicit(var, names)
-                    indexes.update({k: index for k in index_vars})
-                    variables.update(index_vars)
+                    indexes |= {k: index for k in index_vars}
+                    variables |= index_vars
                     coord_names.update(index_vars)
 
         needed_dims: OrderedSet[Hashable] = OrderedSet()
@@ -1396,12 +1381,12 @@ class Dataset(
 
         needed_dims = set(variable.dims)
 
-        coords: dict[Hashable, Variable] = {}
-        # preserve ordering
-        for k in self._variables:
-            if k in self._coord_names and set(self._variables[k].dims) <= needed_dims:
-                coords[k] = self._variables[k]
-
+        coords: dict[Hashable, Variable] = {
+            k: self._variables[k]
+            for k in self._variables
+            if k in self._coord_names
+            and set(self._variables[k].dims) <= needed_dims
+        }
         indexes = filter_indexes_from_coords(self._indexes, set(coords))
 
         return DataArray(variable, coords, name=name, indexes=indexes, fastpath=True)
@@ -1538,7 +1523,7 @@ class Dataset(
 
         elif utils.iterable_of_hashable(key):
             keylist = list(key)
-            if len(keylist) == 0:
+            if not keylist:
                 raise ValueError("Empty list of variables to be set")
             if len(keylist) == 1:
                 self.update({keylist[0]: value})
@@ -1569,15 +1554,14 @@ class Dataset(
         from xarray.core.dataarray import DataArray
 
         if isinstance(value, Dataset):
-            missing_vars = [
+            if missing_vars := [
                 name for name in value.data_vars if name not in self.data_vars
-            ]
-            if missing_vars:
+            ]:
                 raise ValueError(
                     f"Variables {missing_vars} in new values"
                     f" not available in original dataset:\n{self}"
                 )
-        elif not any([isinstance(value, t) for t in [DataArray, Number, str]]):
+        elif not any(isinstance(value, t) for t in [DataArray, Number, str]):
             raise TypeError(
                 "Dataset assignment only accepts DataArrays, Datasets, and scalars."
             )
@@ -1592,11 +1576,7 @@ class Dataset(
                     f"Variable '{name}': indexer {key} not available"
                 ) from e
 
-            if isinstance(value, Dataset):
-                val = value[name]
-            else:
-                val = value
-
+            val = value[name] if isinstance(value, Dataset) else value
             if isinstance(val, DataArray):
                 # check consistency of dimensions
                 for dim in val.dims:
@@ -1618,7 +1598,7 @@ class Dataset(
             new_value[name] = duck_array_ops.astype(val, dtype=var_k.dtype, copy=False)
 
         # check consistency of dimension sizes and dimension coordinates
-        if isinstance(value, DataArray) or isinstance(value, Dataset):
+        if isinstance(value, (DataArray, Dataset)):
             align(self[key], value, join="exact", copy=False)
 
         return new_value
@@ -1792,8 +1772,7 @@ class Dataset(
             else:
                 names = list(names)
             self._assert_all_in_dataset(names)
-            bad_coords = set(names) & set(self._indexes)
-            if bad_coords:
+            if bad_coords := set(names) & set(self._indexes):
                 raise ValueError(
                     f"cannot remove index coordinates with reset_coords: {bad_coords}"
                 )
@@ -2192,20 +2171,15 @@ class Dataset(
         if buf is None:  # pragma: no cover
             buf = sys.stdout
 
-        lines = []
-        lines.append("xarray.Dataset {")
-        lines.append("dimensions:")
-        for name, size in self.dims.items():
-            lines.append(f"\t{name} = {size} ;")
+        lines = ["xarray.Dataset {", "dimensions:"]
+        lines.extend(f"\t{name} = {size} ;" for name, size in self.dims.items())
         lines.append("\nvariables:")
         for name, da in self.variables.items():
             dims = ", ".join(map(str, da.dims))
             lines.append(f"\t{da.dtype} {name}({dims}) ;")
-            for k, v in da.attrs.items():
-                lines.append(f"\t\t{name}:{k} = {v} ;")
+            lines.extend(f"\t\t{name}:{k} = {v} ;" for k, v in da.attrs.items())
         lines.append("\n// global attributes:")
-        for k, v in self.attrs.items():
-            lines.append(f"\t:{k} = {v} ;")
+        lines.extend(f"\t:{k} = {v} ;" for k, v in self.attrs.items())
         lines.append("}")
 
         buf.write("\n".join(lines))
@@ -2319,8 +2293,7 @@ class Dataset(
         else:
             chunks = either_dict_or_kwargs(chunks, chunks_kwargs, "chunk")
 
-        bad_dims = chunks.keys() - self.dims.keys()
-        if bad_dims:
+        if bad_dims := chunks.keys() - self.dims.keys():
             raise ValueError(
                 f"some chunks keys are not dimensions on this object: {bad_dims}"
             )
@@ -2384,8 +2357,7 @@ class Dataset(
 
                 if v.ndim > 1:
                     raise IndexError(
-                        "Unlabeled multi-dimensional array cannot be "
-                        "used for indexing: {}".format(k)
+                        f"Unlabeled multi-dimensional array cannot be used for indexing: {k}"
                     )
                 yield k, v
 
@@ -2520,15 +2492,15 @@ class Dataset(
             # preserve variable order
             if name in index_variables:
                 var = index_variables[name]
-            else:
-                var_indexers = {k: v for k, v in indexers.items() if k in var.dims}
-                if var_indexers:
-                    var = var.isel(var_indexers)
-                    if drop and var.ndim == 0 and name in coord_names:
-                        coord_names.remove(name)
-                        continue
+            elif var_indexers := {
+                k: v for k, v in indexers.items() if k in var.dims
+            }:
+                var = var.isel(var_indexers)
+                if drop and var.ndim == 0 and name in coord_names:
+                    coord_names.remove(name)
+                    continue
             variables[name] = var
-            dims.update(zip(var.dims, var.shape))
+            dims |= zip(var.dims, var.shape)
 
         return self._construct_direct(
             variables=variables,
@@ -2556,10 +2528,9 @@ class Dataset(
             if name in index_variables:
                 new_var = index_variables[name]
             else:
-                var_indexers = {
+                if var_indexers := {
                     k: v for k, v in valid_indexers.items() if k in var.dims
-                }
-                if var_indexers:
+                }:
                     new_var = var.isel(indexers=var_indexers)
                     # drop scalar coordinates
                     # https://github.com/pydata/xarray/issues/6554
@@ -2576,7 +2547,7 @@ class Dataset(
 
         # Extract coordinates from indexers
         coord_vars, new_indexes = selected._get_indexers_coords_and_indexes(indexers)
-        variables.update(coord_vars)
+        variables |= coord_vars
         indexes.update(new_indexes)
         coord_names = self._coord_names & variables.keys() | coord_vars.keys()
         return self._replace_with_new_dims(variables, coord_names, indexes=indexes)
@@ -2659,9 +2630,8 @@ class Dataset(
             for k, v in query_results.variables.items():
                 if v.dims:
                     no_scalar_variables[k] = v
-                else:
-                    if k in self._coord_names:
-                        query_results.drop_coords.append(k)
+                elif k in self._coord_names:
+                    query_results.drop_coords.append(k)
             query_results.variables = no_scalar_variables
 
         result = self.isel(indexers=query_results.dim_indexers, drop=drop)
@@ -2863,10 +2833,7 @@ class Dataset(
             Dimensions that must not be broadcasted
 
         """
-        if exclude is None:
-            exclude = set()
-        else:
-            exclude = set(exclude)
+        exclude = set() if exclude is None else set(exclude)
         args = align(other, self, join="outer", copy=False, exclude=exclude)
 
         dims_map, common_coords = _get_broadcast_dims_map_common_coords(args, exclude)
@@ -2908,31 +2875,28 @@ class Dataset(
 
         if not dim_pos_indexers:
             # fast path for no reindexing necessary
-            if set(new_indexes) - set(self._indexes):
-                # this only adds new indexes and their coordinate variables
-                reindexed = self._overwrite_indexes(new_indexes, new_variables)
-            else:
-                reindexed = self.copy(deep=aligner.copy)
-        else:
-            to_reindex = {
-                k: v
-                for k, v in self.variables.items()
-                if k not in variables and k not in exclude_vars
-            }
-            reindexed_vars = alignment.reindex_variables(
-                to_reindex,
-                dim_pos_indexers,
-                copy=aligner.copy,
-                fill_value=fill_value,
-                sparse=aligner.sparse,
+            return (
+                self._overwrite_indexes(new_indexes, new_variables)
+                if set(new_indexes) - set(self._indexes)
+                else self.copy(deep=aligner.copy)
             )
-            new_variables.update(reindexed_vars)
-            new_coord_names = self._coord_names | set(new_indexes)
-            reindexed = self._replace_with_new_dims(
-                new_variables, new_coord_names, indexes=new_indexes
-            )
-
-        return reindexed
+        to_reindex = {
+            k: v
+            for k, v in self.variables.items()
+            if k not in variables and k not in exclude_vars
+        }
+        reindexed_vars = alignment.reindex_variables(
+            to_reindex,
+            dim_pos_indexers,
+            copy=aligner.copy,
+            fill_value=fill_value,
+            sparse=aligner.sparse,
+        )
+        new_variables |= reindexed_vars
+        new_coord_names = self._coord_names | set(new_indexes)
+        return self._replace_with_new_dims(
+            new_variables, new_coord_names, indexes=new_indexes
+        )
 
     def reindex_like(
         self: T_Dataset,
@@ -3403,7 +3367,7 @@ class Dataset(
             )
             indexers.update({d: self.variables[d] for d in sdims})
 
-        obj = self if assume_sorted else self.sortby([k for k in coords])
+        obj = self if assume_sorted else self.sortby(list(coords))
 
         def maybe_variable(obj, k):
             # workaround to get variable for dimension without coordinate.
@@ -3648,14 +3612,14 @@ class Dataset(
         for index, coord_names in self.xindexes.group_by_index():
             new_index = index.rename(name_dict, dims_dict)
             new_coord_names = [name_dict.get(k, k) for k in coord_names]
-            indexes.update({k: new_index for k in new_coord_names})
+            indexes |= {k: new_index for k in new_coord_names}
             new_index_vars = new_index.create_variables(
                 {
                     new: self._variables[old]
                     for old, new in zip(coord_names, new_coord_names)
                 }
             )
-            variables.update(new_index_vars)
+            variables |= new_index_vars
 
         return indexes, variables
 
@@ -3929,8 +3893,8 @@ class Dataset(
                     variables[k] = var
                 else:
                     index, index_vars = create_default_index_implicit(var)
-                    indexes.update({name: index for name in index_vars})
-                    variables.update(index_vars)
+                    indexes |= {name: index for name in index_vars}
+                    variables |= index_vars
                     coord_names.update(index_vars)
             else:
                 var = v.to_base_variable()
@@ -3996,11 +3960,11 @@ class Dataset(
             )
         elif isinstance(dim, str) or not isinstance(dim, Sequence):
             dim = {dim: 1}
-        elif isinstance(dim, Sequence):
-            if len(dim) != len(set(dim)):
-                raise ValueError("dims should not contain duplicate values.")
+        elif len(dim) == len(set(dim)):
             dim = {d: 1 for d in dim}
 
+        else:
+            raise ValueError("dims should not contain duplicate values.")
         dim = either_dict_or_kwargs(dim, dim_kwargs, "expand_dims")
         assert isinstance(dim, MutableMapping)
 
@@ -4033,42 +3997,17 @@ class Dataset(
                 # for later use.
                 index = PandasIndex(v, k)
                 indexes[k] = index
-                variables.update(index.create_variables())
+                variables |= index.create_variables()
                 coord_names.add(k)
                 dim[k] = variables[k].size
-            elif isinstance(v, int):
-                pass  # Do nothing if the dimensions value is just an int
-            else:
+            elif not isinstance(v, int):
                 raise TypeError(
                     "The value of new dimension {k} must be "
                     "an iterable or an int".format(k=k)
                 )
 
         for k, v in self._variables.items():
-            if k not in dim:
-                if k in coord_names:  # Do not change coordinates
-                    variables[k] = v
-                else:
-                    result_ndim = len(v.dims) + len(axis)
-                    for a in axis:
-                        if a < -result_ndim or result_ndim - 1 < a:
-                            raise IndexError(
-                                f"Axis {a} of variable {k} is out of bounds of the "
-                                f"expanded dimension size {result_ndim}"
-                            )
-
-                    axis_pos = [a if a >= 0 else result_ndim + a for a in axis]
-                    if len(axis_pos) != len(set(axis_pos)):
-                        raise ValueError("axis should not contain duplicate values")
-                    # We need to sort them to make sure `axis` equals to the
-                    # axis positions of the result array.
-                    zip_axis_dim = sorted(zip(axis_pos, dim.items()))
-
-                    all_dims = list(zip(v.dims, v.shape))
-                    for d, c in zip_axis_dim:
-                        all_dims.insert(d, c)
-                    variables[k] = v.set_dims(dict(all_dims))
-            else:
+            if k in dim:
                 if k not in variables:
                     # If dims includes a label of a non-dimension coordinate,
                     # it will be promoted to a 1D coordinate with a single value.
@@ -4076,6 +4015,28 @@ class Dataset(
                     indexes[k] = index
                     variables.update(index_vars)
 
+            elif k in coord_names:  # Do not change coordinates
+                variables[k] = v
+            else:
+                result_ndim = len(v.dims) + len(axis)
+                for a in axis:
+                    if a < -result_ndim or result_ndim - 1 < a:
+                        raise IndexError(
+                            f"Axis {a} of variable {k} is out of bounds of the "
+                            f"expanded dimension size {result_ndim}"
+                        )
+
+                axis_pos = [a if a >= 0 else result_ndim + a for a in axis]
+                if len(axis_pos) != len(set(axis_pos)):
+                    raise ValueError("axis should not contain duplicate values")
+                # We need to sort them to make sure `axis` equals to the
+                # axis positions of the result array.
+                zip_axis_dim = sorted(zip(axis_pos, dim.items()))
+
+                all_dims = list(zip(v.dims, v.shape))
+                for d, c in zip_axis_dim:
+                    all_dims.insert(d, c)
+                variables[k] = v.set_dims(dict(all_dims))
         return self._replace_with_new_dims(
             variables, coord_names=coord_names, indexes=indexes
         )
@@ -4161,8 +4122,7 @@ class Dataset(
             else:
                 var_names = list(_var_names)
 
-            invalid_vars = set(var_names) - set(self._variables)
-            if invalid_vars:
+            if invalid_vars := set(var_names) - set(self._variables):
                 raise ValueError(
                     ", ".join([str(v) for v in invalid_vars])
                     + " variable(s) do not exist"
@@ -4211,8 +4171,8 @@ class Dataset(
                 for n in idx.index.names:
                     replace_dims[n] = dim
 
-            new_indexes.update({k: idx for k in idx_vars})
-            new_variables.update(idx_vars)
+            new_indexes |= {k: idx for k in idx_vars}
+            new_variables |= idx_vars
 
         # re-add deindexed coordinates (convert to base variables)
         for k in drop_variables:
@@ -4226,12 +4186,12 @@ class Dataset(
         indexes_: dict[Any, Index] = {
             k: v for k, v in self._indexes.items() if k not in drop_indexes
         }
-        indexes_.update(new_indexes)
+        indexes_ |= new_indexes
 
         variables = {
             k: v for k, v in self._variables.items() if k not in drop_variables
         }
-        variables.update(new_variables)
+        variables |= new_variables
 
         # update dimensions if necessary, GH: 3512
         for k, v in variables.items():
@@ -4388,17 +4348,11 @@ class Dataset(
             coord_names = [coord_names]
 
         if index_cls is None:
-            if len(coord_names) == 1:
-                index_cls = PandasIndex
-            else:
-                index_cls = PandasMultiIndex
-        else:
-            if not issubclass(index_cls, Index):
-                raise TypeError(f"{index_cls} is not a subclass of xarray.Index")
+            index_cls = PandasIndex if len(coord_names) == 1 else PandasMultiIndex
+        elif not issubclass(index_cls, Index):
+            raise TypeError(f"{index_cls} is not a subclass of xarray.Index")
 
-        invalid_coords = set(coord_names) - self._coord_names
-
-        if invalid_coords:
+        if invalid_coords := set(coord_names) - self._coord_names:
             msg = ["invalid coordinate(s)"]
             no_vars = invalid_coords - set(self._variables)
             data_vars = invalid_coords - no_vars
@@ -4410,11 +4364,7 @@ class Dataset(
                 )
             raise ValueError("\n".join(msg))
 
-        # we could be more clever here (e.g., drop-in index replacement if index
-        # coordinates do not conflict), but let's not allow this for now
-        indexed_coords = set(coord_names) & set(self._indexes)
-
-        if indexed_coords:
+        if indexed_coords := set(coord_names) & set(self._indexes):
             raise ValueError(
                 f"those coordinates already have an index: {indexed_coords}"
             )
@@ -4443,18 +4393,16 @@ class Dataset(
                 variables[name] = new_coord_vars[name]
             indexes[name] = index
         else:
-            # reorder variables and indexes so that coordinates having the same
-            # index are next to each other
-            variables = {}
-            for name, var in self._variables.items():
-                if name not in coord_names:
-                    variables[name] = var
-
-            indexes = {}
-            for name, idx in self._indexes.items():
-                if name not in coord_names:
-                    indexes[name] = idx
-
+            variables = {
+                name: var
+                for name, var in self._variables.items()
+                if name not in coord_names
+            }
+            indexes = {
+                name: idx
+                for name, idx in self._indexes.items()
+                if name not in coord_names
+            }
             for name in coord_names:
                 try:
                     variables[name] = new_coord_vars[name]
@@ -4506,14 +4454,14 @@ class Dataset(
             level_vars = {k: self._variables[k] for k in order}
             idx = index.reorder_levels(level_vars)
             idx_vars = idx.create_variables(level_vars)
-            new_indexes.update({k: idx for k in idx_vars})
-            new_variables.update(idx_vars)
+            new_indexes |= {k: idx for k in idx_vars}
+            new_variables |= idx_vars
 
         indexes = {k: v for k, v in self._indexes.items() if k not in new_indexes}
-        indexes.update(new_indexes)
+        indexes |= new_indexes
 
         variables = {k: v for k, v in self._variables.items() if k not in new_variables}
-        variables.update(new_variables)
+        variables |= new_variables
 
         return self._replace(variables, indexes=indexes)
 

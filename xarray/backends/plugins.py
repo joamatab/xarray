@@ -84,7 +84,7 @@ def backends_dict_from_pkg(
 def set_missing_parameters(
     backend_entrypoints: dict[str, type[BackendEntrypoint]]
 ) -> None:
-    for _, backend in backend_entrypoints.items():
+    for backend in backend_entrypoints.values():
         if backend.open_dataset_parameters is None:
             open_dataset = backend.open_dataset
             backend.open_dataset_parameters = detect_parameters(open_dataset)
@@ -93,24 +93,24 @@ def set_missing_parameters(
 def sort_backends(
     backend_entrypoints: dict[str, type[BackendEntrypoint]]
 ) -> dict[str, type[BackendEntrypoint]]:
-    ordered_backends_entrypoints = {}
-    for be_name in STANDARD_BACKENDS_ORDER:
-        if backend_entrypoints.get(be_name, None) is not None:
-            ordered_backends_entrypoints[be_name] = backend_entrypoints.pop(be_name)
-    ordered_backends_entrypoints.update(
-        {name: backend_entrypoints[name] for name in sorted(backend_entrypoints)}
-    )
-    return ordered_backends_entrypoints
+    return {
+        be_name: backend_entrypoints.pop(be_name)
+        for be_name in STANDARD_BACKENDS_ORDER
+        if backend_entrypoints.get(be_name, None) is not None
+    } | {
+        name: backend_entrypoints[name] for name in sorted(backend_entrypoints)
+    }
 
 
 def build_engines(entrypoints: EntryPoints) -> dict[str, BackendEntrypoint]:
-    backend_entrypoints: dict[str, type[BackendEntrypoint]] = {}
-    for backend_name, (module_name, backend) in BACKEND_ENTRYPOINTS.items():
-        if module_name is None or module_available(module_name):
-            backend_entrypoints[backend_name] = backend
+    backend_entrypoints: dict[str, type[BackendEntrypoint]] = {
+        backend_name: backend
+        for backend_name, (module_name, backend) in BACKEND_ENTRYPOINTS.items()
+        if module_name is None or module_available(module_name)
+    }
     entrypoints_unique = remove_duplicates(entrypoints)
     external_backend_entrypoints = backends_dict_from_pkg(entrypoints_unique)
-    backend_entrypoints.update(external_backend_entrypoints)
+    backend_entrypoints |= external_backend_entrypoints
     backend_entrypoints = sort_backends(backend_entrypoints)
     set_missing_parameters(backend_entrypoints)
     return {name: backend() for name, backend in backend_entrypoints.items()}
@@ -168,25 +168,7 @@ def guess_engine(
             warnings.warn(f"{engine!r} fails while guessing", RuntimeWarning)
 
     installed_engines = [k for k in engines if k != "store"]
-    if not compatible_engines:
-        if installed_engines:
-            error_msg = (
-                "did not find a match in any of xarray's currently installed IO "
-                f"backends {installed_engines}. Consider explicitly selecting one of the "
-                "installed engines via the ``engine`` parameter, or installing "
-                "additional IO dependencies, see:\n"
-                "https://docs.xarray.dev/en/stable/getting-started-guide/installing.html\n"
-                "https://docs.xarray.dev/en/stable/user-guide/io.html"
-            )
-        else:
-            error_msg = (
-                "xarray is unable to open this file because it has no currently "
-                "installed IO backends. Xarray's read/write support requires "
-                "installing optional IO dependencies, see:\n"
-                "https://docs.xarray.dev/en/stable/getting-started-guide/installing.html\n"
-                "https://docs.xarray.dev/en/stable/user-guide/io"
-            )
-    else:
+    if compatible_engines:
         error_msg = (
             "found the following matches with the input file in xarray's IO "
             f"backends: {compatible_engines}. But their dependencies may not be installed, see:\n"
@@ -194,6 +176,23 @@ def guess_engine(
             "https://docs.xarray.dev/en/stable/getting-started-guide/installing.html"
         )
 
+    elif installed_engines:
+        error_msg = (
+            "did not find a match in any of xarray's currently installed IO "
+            f"backends {installed_engines}. Consider explicitly selecting one of the "
+            "installed engines via the ``engine`` parameter, or installing "
+            "additional IO dependencies, see:\n"
+            "https://docs.xarray.dev/en/stable/getting-started-guide/installing.html\n"
+            "https://docs.xarray.dev/en/stable/user-guide/io.html"
+        )
+    else:
+        error_msg = (
+            "xarray is unable to open this file because it has no currently "
+            "installed IO backends. Xarray's read/write support requires "
+            "installing optional IO dependencies, see:\n"
+            "https://docs.xarray.dev/en/stable/getting-started-guide/installing.html\n"
+            "https://docs.xarray.dev/en/stable/user-guide/io"
+        )
     raise ValueError(error_msg)
 
 

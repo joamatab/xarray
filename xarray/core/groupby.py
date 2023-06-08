@@ -417,7 +417,7 @@ class ResolvedUniqueGrouper(ResolvedGrouper):
         )
         full_index = unique_coord
 
-        return codes, group_indices, unique_coord, full_index
+        return codes, group_indices, full_index, full_index
 
     def _factorize_dummy(self, squeeze) -> T_FactorizeOut:
         size = self.group.size
@@ -461,10 +461,10 @@ class ResolvedBinGrouper(ResolvedGrouper):
             g for g in _codes_to_groups(binned_codes, len(full_index)) if g
         ]
 
-        if len(group_indices) == 0:
+        if not group_indices:
             raise ValueError(f"None of the data falls within bins with edges {bins!r}")
 
-        new_dim_name = str(self.group.name) + "_bins"
+        new_dim_name = f"{str(self.group.name)}_bins"
         self.group1d = DataArray(
             binned, getattr(self.group1d, "coords", None), name=new_dim_name
         )
@@ -528,18 +528,17 @@ class ResolvedTimeResampleGrouper(ResolvedGrouper):
 
         if isinstance(self.group_as_index, CFTimeIndex):
             return self.index_grouper.first_items(self.group_as_index)
-        else:
-            s = pd.Series(np.arange(self.group_as_index.size), self.group_as_index)
-            grouped = s.groupby(self.index_grouper)
-            first_items = grouped.first()
-            counts = grouped.count()
-            # This way we generate codes for the final output index: full_index.
-            # So for _flox_reduce we avoid one reindex and copy by avoiding
-            # _maybe_restore_empty_groups
-            codes = np.repeat(np.arange(len(first_items)), counts)
-            if self.grouper.loffset is not None:
-                _apply_loffset(self.grouper.loffset, first_items)
-            return first_items, codes
+        s = pd.Series(np.arange(self.group_as_index.size), self.group_as_index)
+        grouped = s.groupby(self.index_grouper)
+        first_items = grouped.first()
+        counts = grouped.count()
+        # This way we generate codes for the final output index: full_index.
+        # So for _flox_reduce we avoid one reindex and copy by avoiding
+        # _maybe_restore_empty_groups
+        codes = np.repeat(np.arange(len(first_items)), counts)
+        if self.grouper.loffset is not None:
+            _apply_loffset(self.grouper.loffset, first_items)
+        return first_items, codes
 
     def _factorize(self, squeeze: bool) -> T_FactorizeOut:
         full_index, first_items, codes_ = self._get_index_and_items()
@@ -926,9 +925,9 @@ class GroupBy(Generic[T_Xarray]):
         multidimensional group."""
         (grouper,) = self.groupers
         stacked_dim = grouper.stacked_dim
-        inserted_dims = grouper.inserted_dims
         if stacked_dim is not None and stacked_dim in obj.dims:
             obj = obj.unstack(stacked_dim)
+            inserted_dims = grouper.inserted_dims
             for dim in inserted_dims:
                 if dim in obj.coords:
                     del obj.coords[dim]
@@ -958,8 +957,7 @@ class GroupBy(Generic[T_Xarray]):
         # if flox decides to change its default
         kwargs.setdefault("method", "cohorts")
 
-        numeric_only = kwargs.pop("numeric_only", None)
-        if numeric_only:
+        if numeric_only := kwargs.pop("numeric_only", None):
             non_numeric = {
                 name: var
                 for name, var in obj.data_vars.items()

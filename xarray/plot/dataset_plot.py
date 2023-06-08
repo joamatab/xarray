@@ -470,8 +470,7 @@ def quiver(
 
     kwargs.pop("hue_style")
     kwargs.setdefault("pivot", "middle")
-    hdl = ax.quiver(*args, **kwargs, **cmap_params)
-    return hdl
+    return ax.quiver(*args, **kwargs, **cmap_params)
 
 
 @overload
@@ -717,7 +716,7 @@ def _normalize_args(
         .bind(*args, **kwargs)
         .arguments.items()
     )
-    locals_.update(locals_.pop("kwargs", {}))
+    locals_ |= locals_.pop("kwargs", {})
 
     return locals_
 
@@ -915,7 +914,7 @@ def scatter(
     """Scatter plot Dataset data variables against each other."""
     locals_ = locals()
     del locals_["ds"]
-    locals_.update(locals_.pop("kwargs", {}))
+    locals_ |= locals_.pop("kwargs", {})
     da = _temp_dataarray(ds, y, locals_)
 
     return da.plot.scatter(*locals_.pop("args", ()), **locals_)

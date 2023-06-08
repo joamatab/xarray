@@ -296,16 +296,14 @@ def series_reduce(da, func, dim, **kwargs):
         se = da.to_series()
         return from_series_or_scalar(getattr(se, func)(**kwargs))
     else:
-        da1 = []
         dims = list(da.dims)
         dims.remove(dim)
         d = dims[0]
-        for i in range(len(da[d])):
-            da1.append(series_reduce(da.isel(**{d: i}), func, dim, **kwargs))
-
-        if d in da.coords:
-            return concat(da1, dim=da[d])
-        return concat(da1, dim=d)
+        da1 = [
+            series_reduce(da.isel(**{d: i}), func, dim, **kwargs)
+            for i in range(len(da[d]))
+        ]
+        return concat(da1, dim=da[d]) if d in da.coords else concat(da1, dim=d)
 
 
 def assert_dask_array(da, dask):
@@ -448,7 +446,6 @@ def test_empty_axis_dtype():
 @pytest.mark.parametrize("dtype", [float, int, np.float32, np.bool_])
 @pytest.mark.parametrize("dask", [False, True])
 @pytest.mark.parametrize("func", ["sum", "min", "max", "mean", "var"])
-# TODO test cumsum, cumprod
 @pytest.mark.parametrize("skipna", [False, True])
 @pytest.mark.parametrize("aggdim", [None, "x"])
 def test_reduce(dim_num, dtype, dask, func, skipna, aggdim):
@@ -479,11 +476,7 @@ def test_reduce(dim_num, dtype, dask, func, skipna, aggdim):
         if da.dtype.kind == "O" and skipna:
             # Numpy < 1.13 does not handle object-type array.
             try:
-                if skipna:
-                    expected = getattr(np, f"nan{func}")(da.values, axis=axis)
-                else:
-                    expected = getattr(np, func)(da.values, axis=axis)
-
+                expected = getattr(np, f"nan{func}")(da.values, axis=axis)
                 actual = getattr(da, func)(skipna=skipna, dim=aggdim)
                 assert_dask_array(actual, dask)
                 np.testing.assert_allclose(
@@ -509,11 +502,9 @@ def test_reduce(dim_num, dtype, dask, func, skipna, aggdim):
             if dask:
                 assert isinstance(da.data, dask_array_type)
             expected = series_reduce(da, func, skipna=skipna, dim=aggdim, ddof=5)
-            assert_allclose(actual, expected, rtol=rtol)
         else:
             expected = series_reduce(da, func, skipna=skipna, dim=aggdim)
-            assert_allclose(actual, expected, rtol=rtol)
-
+        assert_allclose(actual, expected, rtol=rtol)
         # make sure the dtype argument
         if func not in ["max", "min"]:
             actual = getattr(da, func)(skipna=skipna, dim=aggdim, dtype=float)
@@ -794,10 +785,7 @@ def test_datetime_to_numeric_cftime(dask):
     np.testing.assert_array_equal(result, expected)
 
     with raise_if_dask_computes():
-        if dask:
-            time = dask.array.asarray(times[1])
-        else:
-            time = np.asarray(times[1])
+        time = dask.array.asarray(times[1]) if dask else np.asarray(times[1])
         result = duck_array_ops.datetime_to_numeric(
             time, offset=times[0], datetime_unit="h", dtype=int
         )

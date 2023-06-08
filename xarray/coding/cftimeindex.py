@@ -86,9 +86,7 @@ def optional(x):
 
 
 def trailing_optional(xs):
-    if not xs:
-        return ""
-    return xs[0] + optional(trailing_optional(xs[1:]))
+    return "" if not xs else xs[0] + optional(trailing_optional(xs[1:]))
 
 
 def build_pattern(date_sep=r"\-", datetime_sep=r"T", time_sep=r"\:"):
@@ -100,10 +98,10 @@ def build_pattern(date_sep=r"\-", datetime_sep=r"T", time_sep=r"\:"):
         (time_sep, "minute", r"\d{2}"),
         (time_sep, "second", r"\d{2}"),
     ]
-    pattern_list = []
-    for sep, name, sub_pattern in pieces:
-        pattern_list.append((sep if sep else "") + named(name, sub_pattern))
-        # TODO: allow timezone offsets?
+    pattern_list = [
+        (sep if sep else "") + named(name, sub_pattern)
+        for sep, name, sub_pattern in pieces
+    ]
     return "^" + trailing_optional(pattern_list) + "$"
 
 
@@ -115,8 +113,7 @@ _PATTERNS = [_BASIC_PATTERN, _EXTENDED_PATTERN, _CFTIME_PATTERN]
 
 def parse_iso8601_like(datetime_string):
     for pattern in _PATTERNS:
-        match = re.match(pattern, datetime_string)
-        if match:
+        if match := re.match(pattern, datetime_string):
             return match.groupdict()
     raise ValueError(
         f"no ISO-8601 or cftime-string-like match for string: {datetime_string}"
@@ -212,10 +209,7 @@ def _field_accessor(name, docstring=None, min_cftime_version="0.0"):
 
 
 def get_date_type(self):
-    if self._data.size:
-        return type(self._data[0])
-    else:
-        return None
+    return type(self._data[0]) if self._data.size else None
 
 
 def assert_all_valid_date_type(data):
@@ -227,13 +221,11 @@ def assert_all_valid_date_type(data):
         date_type = type(sample)
         if not isinstance(sample, cftime.datetime):
             raise TypeError(
-                "CFTimeIndex requires cftime.datetime "
-                "objects. Got object of {}.".format(date_type)
+                f"CFTimeIndex requires cftime.datetime objects. Got object of {date_type}."
             )
         if not all(isinstance(value, date_type) for value in data):
             raise TypeError(
-                "CFTimeIndex requires using datetime "
-                "objects of all the same type.  Got\n{}.".format(data)
+                f"CFTimeIndex requires using datetime objects of all the same type.  Got\n{data}."
             )
 
 
@@ -557,8 +549,7 @@ class CFTimeIndex(pd.Index):
             return self + n * to_offset(freq)
         else:
             raise TypeError(
-                "'freq' must be of type "
-                "str or datetime.timedelta, got {}.".format(freq)
+                f"'freq' must be of type str or datetime.timedelta, got {freq}."
             )
 
     def __add__(self, other):

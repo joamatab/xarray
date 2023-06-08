@@ -50,9 +50,7 @@ def _get_lock_maker(scheduler=None):
     dask.utils.get_scheduler_lock
     """
 
-    if scheduler is None:
-        return _get_threaded_lock
-    elif scheduler == "threaded":
+    if scheduler is None or scheduler == "threaded":
         return _get_threaded_lock
     elif scheduler == "multiprocessing":
         return _get_multiprocessing_lock
@@ -129,16 +127,7 @@ def acquire(lock, blocking=True):
     Includes backwards compatibility hacks for old versions of Python, dask
     and dask-distributed.
     """
-    if blocking:
-        # no arguments needed
-        return lock.acquire()
-    else:
-        # "blocking" keyword argument not supported for:
-        # - threading.Lock on Python 2.
-        # - dask.SerializableLock with dask v1.0.0 or earlier.
-        # - multiprocessing.Lock calls the argument "block" instead.
-        # - dask.distributed.Lock uses the blocking argument as the first one
-        return lock.acquire(blocking)
+    return lock.acquire() if blocking else lock.acquire(blocking)
 
 
 class CombinedLock:
@@ -212,6 +201,4 @@ def combine_locks(locks):
 
 def ensure_lock(lock):
     """Ensure that the given object is a lock."""
-    if lock is None or lock is False:
-        return DummyLock()
-    return lock
+    return DummyLock() if lock is None or lock is False else lock

@@ -134,12 +134,8 @@ class Rolling(Generic[T_Xarray]):
         """Constructs reduction methods built on a numpy reduction function (e.g. sum),
         a bottleneck reduction function (e.g. move_sum), or a Rolling reduction (_mean).
         """
-        if rolling_agg_func:
-            array_agg_func = None
-        else:
-            array_agg_func = getattr(duck_array_ops, name)
-
-        bottleneck_move_func = getattr(bottleneck, "move_" + name, None)
+        array_agg_func = None if rolling_agg_func else getattr(duck_array_ops, name)
+        bottleneck_move_func = getattr(bottleneck, f"move_{name}", None)
 
         def method(self, keep_attrs=None, **kwargs):
             keep_attrs = self._get_keep_attrs(keep_attrs)
@@ -369,7 +365,7 @@ class DataArrayRolling(Rolling["DataArray"]):
         keep_attrs = self._get_keep_attrs(keep_attrs)
 
         if window_dim is None:
-            if len(window_dim_kwargs) == 0:
+            if not window_dim_kwargs:
                 raise ValueError(
                     "Either window_dim or window_dim_kwargs need to be specified."
                 )
@@ -459,10 +455,7 @@ class DataArrayRolling(Rolling["DataArray"]):
 
         # save memory with reductions GH4325
         fillna = kwargs.pop("fillna", dtypes.NA)
-        if fillna is not dtypes.NA:
-            obj = self.obj.fillna(fillna)
-        else:
-            obj = self.obj
+        obj = self.obj.fillna(fillna) if fillna is not dtypes.NA else self.obj
         windows = self._construct(
             obj, rolling_dim, keep_attrs=keep_attrs, fill_value=fillna
         )
@@ -746,7 +739,7 @@ class DatasetRolling(Rolling["Dataset"]):
         keep_attrs = self._get_keep_attrs(keep_attrs)
 
         if window_dim is None:
-            if len(window_dim_kwargs) == 0:
+            if not window_dim_kwargs:
                 raise ValueError(
                     "Either window_dim or window_dim_kwargs need to be specified."
                 )
@@ -759,9 +752,7 @@ class DatasetRolling(Rolling["Dataset"]):
 
         dataset = {}
         for key, da in self.obj.data_vars.items():
-            # keeps rollings only for the dataset depending on self.dim
-            dims = [d for d in self.dim if d in da.dims]
-            if dims:
+            if dims := [d for d in self.dim if d in da.dims]:
                 wi = {d: window_dims[i] for i, d in enumerate(self.dim) if d in da.dims}
                 st = {d: strides[i] for i, d in enumerate(self.dim) if d in da.dims}
 
@@ -839,8 +830,9 @@ class Coarsen(CoarsenArithmetic, Generic[T_Xarray]):
         self.side = side
         self.boundary = boundary
 
-        absent_dims = [dim for dim in windows.keys() if dim not in self.obj.dims]
-        if absent_dims:
+        if absent_dims := [
+            dim for dim in windows.keys() if dim not in self.obj.dims
+        ]:
             raise ValueError(
                 f"Dimensions {absent_dims!r} not found in {self.obj.__class__.__name__}."
             )
@@ -921,12 +913,11 @@ class Coarsen(CoarsenArithmetic, Generic[T_Xarray]):
                 "Either window_dim or window_dim_kwargs need to be specified."
             )
 
-        bad_new_dims = tuple(
+        if bad_new_dims := tuple(
             win
             for win, dims in window_dim.items()
             if len(dims) != 2 or isinstance(dims, str)
-        )
-        if bad_new_dims:
+        ):
             raise ValueError(
                 f"Please provide exactly two dimension names for the following coarsening dimensions: {bad_new_dims}"
             )
@@ -934,13 +925,11 @@ class Coarsen(CoarsenArithmetic, Generic[T_Xarray]):
         if keep_attrs is None:
             keep_attrs = _get_keep_attrs(default=True)
 
-        missing_dims = set(window_dim) - set(self.windows)
-        if missing_dims:
+        if missing_dims := set(window_dim) - set(self.windows):
             raise ValueError(
                 f"'window_dim' must contain entries for all dimensions to coarsen. Missing {missing_dims}"
             )
-        extra_windows = set(self.windows) - set(window_dim)
-        if extra_windows:
+        if extra_windows := set(self.windows) - set(window_dim):
             raise ValueError(
                 f"'window_dim' includes dimensions that will not be coarsened: {extra_windows}"
             )
@@ -1082,17 +1071,13 @@ class DatasetCoarsen(Coarsen["Dataset"]):
             kwargs["skipna"] = None
 
         def wrapped_func(
-            self: DatasetCoarsen, keep_attrs: bool | None = None, **kwargs
-        ) -> Dataset:
+                self: DatasetCoarsen, keep_attrs: bool | None = None, **kwargs
+            ) -> Dataset:
             from xarray.core.dataset import Dataset
 
             keep_attrs = self._get_keep_attrs(keep_attrs)
 
-            if keep_attrs:
-                attrs = self.obj.attrs
-            else:
-                attrs = {}
-
+            attrs = self.obj.attrs if keep_attrs else {}
             reduced = {}
             for key, da in self.obj.data_vars.items():
                 reduced[key] = da.variable.coarsen(

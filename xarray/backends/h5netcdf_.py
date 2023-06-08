@@ -58,10 +58,7 @@ class H5NetCDFArrayWrapper(BaseNetCDF4Array):
 
 
 def maybe_decode_bytes(txt):
-    if isinstance(txt, bytes):
-        return txt.decode("utf-8")
-    else:
-        return txt
+    return txt.decode("utf-8") if isinstance(txt, bytes) else txt
 
 
 def _read_attributes(h5netcdf_var):
@@ -109,13 +106,13 @@ class H5NetCDFStore(WritableCFDataStore):
         if isinstance(manager, (h5netcdf.File, h5netcdf.Group)):
             if group is None:
                 root, group = find_root_and_group(manager)
-            else:
-                if type(manager) is not h5netcdf.File:
-                    raise ValueError(
-                        "must supply a h5netcdf.File if the group "
-                        "argument is provided"
-                    )
+            elif type(manager) is h5netcdf.File:
                 root = manager
+            else:
+                raise ValueError(
+                    "must supply a h5netcdf.File if the group "
+                    "argument is provided"
+                )
             manager = DummyFileManager(root)
 
         self._manager = manager
@@ -215,10 +212,7 @@ class H5NetCDFStore(WritableCFDataStore):
         vlen_dtype = h5py.check_dtype(vlen=var.dtype)
         if vlen_dtype is str:
             encoding["dtype"] = str
-        elif vlen_dtype is not None:  # pragma: no cover
-            # xarray doesn't support writing arbitrary vlen dtypes yet.
-            pass
-        else:
+        elif vlen_dtype is None:
             encoding["dtype"] = var.dtype
 
         return Variable(dimensions, data, attrs, encoding)
@@ -422,7 +416,7 @@ class H5netcdfBackendEntrypoint(BackendEntrypoint):
 
         store_entrypoint = StoreBackendEntrypoint()
 
-        ds = store_entrypoint.open_dataset(
+        return store_entrypoint.open_dataset(
             store,
             mask_and_scale=mask_and_scale,
             decode_times=decode_times,
@@ -432,7 +426,6 @@ class H5netcdfBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
-        return ds
 
 
 BACKEND_ENTRYPOINTS["h5netcdf"] = ("h5netcdf", H5netcdfBackendEntrypoint)

@@ -306,10 +306,7 @@ def _assert_indexes_invariants_checks(
 
 
 def _assert_variable_invariants(var: Variable, name: Hashable = None):
-    if name is None:
-        name_or_empty: tuple = ()
-    else:
-        name_or_empty = (name,)
+    name_or_empty = () if name is None else (name, )
     assert isinstance(var._dims, tuple), name_or_empty + (var._dims,)
     assert len(var._dims) == len(var._data.shape), name_or_empty + (
         var._dims,
@@ -403,7 +400,5 @@ def _assert_internal_invariants(
         )
     else:
         raise TypeError(
-            "{} is not a supported type for xarray invariant checks".format(
-                type(xarray_obj)
-            )
+            f"{type(xarray_obj)} is not a supported type for xarray invariant checks"
         )

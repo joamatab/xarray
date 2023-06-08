@@ -173,21 +173,20 @@ class AbstractArray:
         return formatting_html.array_repr(self)
 
     def __format__(self: Any, format_spec: str = "") -> str:
-        if format_spec != "":
-            if self.shape == ():
-                # Scalar values might be ok use format_spec with instead of repr:
-                return self.data.__format__(format_spec)
-            else:
-                # TODO: If it's an array the formatting.array_repr(self) should
-                # take format_spec as an input. If we'd only use self.data we
-                # lose all the information about coords for example which is
-                # important information:
-                raise NotImplementedError(
-                    "Using format_spec is only supported"
-                    f" when shape is (). Got shape = {self.shape}."
-                )
-        else:
+        if not format_spec:
             return self.__repr__()
+        if self.shape == ():
+            # Scalar values might be ok use format_spec with instead of repr:
+            return self.data.__format__(format_spec)
+        else:
+            # TODO: If it's an array the formatting.array_repr(self) should
+            # take format_spec as an input. If we'd only use self.data we
+            # lose all the information about coords for example which is
+            # important information:
+            raise NotImplementedError(
+                "Using format_spec is only supported"
+                f" when shape is (). Got shape = {self.shape}."
+            )
 
     def _iter(self: Any) -> Iterator[Any]:
         for n in range(len(self)):
@@ -763,16 +762,15 @@ class DataWithCoords(AttrAccessMixin):
         --------
         pandas.DataFrame.pipe
         """
-        if isinstance(func, tuple):
-            func, target = func
-            if target in kwargs:
-                raise ValueError(
-                    f"{target} is both the pipe target and a keyword argument"
-                )
-            kwargs[target] = self
-            return func(*args, **kwargs)
-        else:
+        if not isinstance(func, tuple):
             return func(self, *args, **kwargs)
+        func, target = func
+        if target in kwargs:
+            raise ValueError(
+                f"{target} is both the pipe target and a keyword argument"
+            )
+        kwargs[target] = self
+        return func(*args, **kwargs)
 
     def rolling_exp(
         self: T_DataWithCoords,
@@ -1293,9 +1291,7 @@ class DataWithCoords(AttrAccessMixin):
 
         if isinstance(test_elements, Dataset):
             raise TypeError(
-                "isin() argument must be convertible to an array: {}".format(
-                    test_elements
-                )
+                f"isin() argument must be convertible to an array: {test_elements}"
             )
         elif isinstance(test_elements, (Variable, DataArray)):
             # need to explicitly pull out data to support dask arrays as the

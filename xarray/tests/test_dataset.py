@@ -670,13 +670,13 @@ class TestDataset:
         assert set(ds.xindexes) == {"dim2", "dim3", "time"}
         assert len(ds.xindexes) == 3
         assert "dim2" in repr(ds.xindexes)
-        assert all([isinstance(idx, Index) for idx in ds.xindexes.values()])
+        assert all(isinstance(idx, Index) for idx in ds.xindexes.values())
 
         # indexes
         assert set(ds.indexes) == {"dim2", "dim3", "time"}
         assert len(ds.indexes) == 3
         assert "dim2" in repr(ds.indexes)
-        assert all([isinstance(idx, pd.Index) for idx in ds.indexes.values()])
+        assert all(isinstance(idx, pd.Index) for idx in ds.indexes.values())
 
         # coords
         assert list(ds.coords) == ["dim2", "dim3", "time", "numbers"]
@@ -5733,12 +5733,13 @@ class TestDataset:
     def test_dataset_diff_n1(self) -> None:
         ds = create_test_data(seed=1)
         actual = ds.diff("dim2")
-        expected_dict = {}
-        expected_dict["var1"] = DataArray(
-            np.diff(ds["var1"].values, axis=1),
-            {"dim2": ds["dim2"].values[1:]},
-            ["dim1", "dim2"],
-        )
+        expected_dict = {
+            "var1": DataArray(
+                np.diff(ds["var1"].values, axis=1),
+                {"dim2": ds["dim2"].values[1:]},
+                ["dim1", "dim2"],
+            )
+        }
         expected_dict["var2"] = DataArray(
             np.diff(ds["var2"].values, axis=1),
             {"dim2": ds["dim2"].values[1:]},
@@ -5752,12 +5753,13 @@ class TestDataset:
     def test_dataset_diff_n2(self) -> None:
         ds = create_test_data(seed=1)
         actual = ds.diff("dim2", n=2)
-        expected_dict = {}
-        expected_dict["var1"] = DataArray(
-            np.diff(ds["var1"].values, axis=1, n=2),
-            {"dim2": ds["dim2"].values[2:]},
-            ["dim1", "dim2"],
-        )
+        expected_dict = {
+            "var1": DataArray(
+                np.diff(ds["var1"].values, axis=1, n=2),
+                {"dim2": ds["dim2"].values[2:]},
+                ["dim1", "dim2"],
+            )
+        }
         expected_dict["var2"] = DataArray(
             np.diff(ds["var2"].values, axis=1, n=2),
             {"dim2": ds["dim2"].values[2:]},

@@ -93,10 +93,7 @@ def _contains_str_like(pat: Any) -> bool:
     if isinstance(pat, (str, bytes)):
         return True
 
-    if not hasattr(pat, "dtype"):
-        return False
-
-    return pat.dtype.kind in ["U", "S"]
+    return False if not hasattr(pat, "dtype") else pat.dtype.kind in ["U", "S"]
 
 
 def _contains_compiled_re(pat: Any) -> bool:
@@ -123,7 +120,7 @@ def _apply_str_ufunc(
     if dtype is None:
         dtype = obj.dtype
 
-    dask_gufunc_kwargs = dict()
+    dask_gufunc_kwargs = {}
     if output_sizes is not None:
         dask_gufunc_kwargs["output_sizes"] = output_sizes
 
@@ -416,10 +413,7 @@ class StringAccessor(Generic[T_DataArray]):
         repl = self._stringify(repl)
 
         def func(x, istart, istop, irepl):
-            if len(x[istart:istop]) == 0:
-                local_stop = istart
-            else:
-                local_stop = istop
+            local_stop = istart if len(x[istart:istop]) == 0 else istop
             y = self._stringify("")
             if istart is not None:
                 y += x[:istart]
@@ -1943,7 +1937,7 @@ class StringAccessor(Generic[T_DataArray]):
         if regex:
             pat = self._re_compile(pat=pat, flags=flags, case=case)
             func = lambda x, ipat, irepl, i_n: ipat.sub(
-                repl=irepl, string=x, count=i_n if i_n >= 0 else 0
+                repl=irepl, string=x, count=max(i_n, 0)
             )
         else:
             pat = self._stringify(pat)

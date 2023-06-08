@@ -65,13 +65,14 @@ def from_cdms2(variable):
     values = np.asarray(variable)
     name = variable.id
     dims = variable.getAxisIds()
-    coords = {}
-    for axis in variable.getAxisList():
-        coords[axis.id] = DataArray(
+    coords = {
+        axis.id: DataArray(
             np.asarray(axis),
             dims=[axis.id],
             attrs=_filter_attrs(axis.attributes, cdms2_ignored_attrs),
         )
+        for axis in variable.getAxisList()
+    }
     grid = variable.getGrid()
     if grid is not None:
         ids = [a.id for a in grid.getAxisList()]
@@ -157,7 +158,7 @@ def _get_iris_args(attrs):
     import cf_units
 
     args = {"attributes": _filter_attrs(attrs, iris_forbidden_keys)}
-    args.update(_pick_attrs(attrs, ("standard_name", "long_name")))
+    args |= _pick_attrs(attrs, ("standard_name", "long_name"))
     unit_args = _pick_attrs(attrs, ("calendar",))
     if "units" in attrs:
         args["units"] = cf_units.Unit(attrs["units"], **unit_args)
@@ -212,7 +213,7 @@ def _iris_obj_to_attrs(obj):
         attrs["calendar"] = obj.units.calendar
     if obj.units.origin != "1" and not obj.units.is_unknown():
         attrs["units"] = obj.units.origin
-    attrs.update(obj.attributes)
+    attrs |= obj.attributes
     return {k: v for k, v in attrs.items() if v is not None}
 
 
@@ -264,15 +265,13 @@ def from_iris(cube):
 
     for coord in cube.coords():
         coord_attrs = _iris_obj_to_attrs(coord)
-        coord_dims = [dims[i] for i in cube.coord_dims(coord)]
-        if coord_dims:
+        if coord_dims := [dims[i] for i in cube.coord_dims(coord)]:
             coords[_name(coord)] = (coord_dims, coord.points, coord_attrs)
         else:
             coords[_name(coord)] = ((), coord.points.item(), coord_attrs)
 
     array_attrs = _iris_obj_to_attrs(cube)
-    cell_methods = _iris_cell_methods_to_str(cube.cell_methods)
-    if cell_methods:
+    if cell_methods := _iris_cell_methods_to_str(cube.cell_methods):
         array_attrs["cell_methods"] = cell_methods
 
     # Deal with iris 1.* and 2.*

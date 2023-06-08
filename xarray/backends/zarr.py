@@ -51,13 +51,11 @@ def encode_zarr_attr_value(value):
     other -> other (no change)
     """
     if isinstance(value, np.ndarray):
-        encoded = value.tolist()
-    # this checks if it's a scalar number
+        return value.tolist()
     elif isinstance(value, np.generic):
-        encoded = value.item()
+        return value.item()
     else:
-        encoded = value
-    return encoded
+        return value
 
 
 class ZarrArrayWrapper(BackendArray):
@@ -173,7 +171,7 @@ def _determine_zarr_chunks(enc_chunks, var_chunks, ndim, name, safe_chunks):
     #   with chunk boundaries, then no synchronization is required."
     # TODO: incorporate synchronizer to allow writes from multiple dask
     # threads
-    if var_chunks and enc_chunks_tuple:
+    if enc_chunks_tuple:
         for zchunk, dchunks in zip(enc_chunks_tuple, var_chunks):
             for dchunk in dchunks[:-1]:
                 if dchunk % zchunk:
@@ -259,8 +257,7 @@ def extract_zarr_variable_encoding(
             del encoding[k]
 
     if raise_on_invalid:
-        invalid = [k for k in encoding if k not in valid_encodings]
-        if invalid:
+        if invalid := [k for k in encoding if k not in valid_encodings]:
             raise ValueError(
                 f"unexpected encoding parameters for zarr backend:  {invalid!r}"
             )
@@ -664,9 +661,7 @@ class ZarrStore(AbstractWritableDataStore):
                 encoding = extract_zarr_variable_encoding(
                     v, raise_on_invalid=check, name=vn, safe_chunks=self._safe_chunks
                 )
-                encoded_attrs = {}
-                # the magic for storing the hidden dimension data
-                encoded_attrs[DIMENSION_KEY] = dims
+                encoded_attrs = {DIMENSION_KEY: dims}
                 for k2, v2 in attrs.items():
                     encoded_attrs[k2] = self.encode_attribute(v2)
 
@@ -857,7 +852,7 @@ def open_zarr(
         "zarr_version": zarr_version,
     }
 
-    ds = open_dataset(
+    return open_dataset(
         filename_or_obj=store,
         group=group,
         decode_cf=decode_cf,
@@ -875,7 +870,6 @@ def open_zarr(
         use_cftime=use_cftime,
         zarr_version=zarr_version,
     )
-    return ds
 
 
 class ZarrBackendEntrypoint(BackendEntrypoint):

@@ -101,17 +101,15 @@ def _infer_line_data(
             xname, huename = _infer_xy_labels(darray=darray, x=x, y=hue)
             xplt = darray[xname]
             if xplt.ndim > 1:
-                if huename in darray.dims:
-                    otherindex = 1 if darray.dims.index(huename) == 0 else 0
-                    otherdim = darray.dims[otherindex]
-                    yplt = darray.transpose(otherdim, huename, transpose_coords=False)
-                    xplt = xplt.transpose(otherdim, huename, transpose_coords=False)
-                else:
+                if huename not in darray.dims:
                     raise ValueError(
-                        "For 2D inputs, hue must be a dimension"
-                        " i.e. one of " + repr(darray.dims)
+                        f"For 2D inputs, hue must be a dimension i.e. one of {repr(darray.dims)}"
                     )
 
+                otherindex = 1 if darray.dims.index(huename) == 0 else 0
+                otherdim = darray.dims[otherindex]
+                yplt = darray.transpose(otherdim, huename, transpose_coords=False)
+                xplt = xplt.transpose(otherdim, huename, transpose_coords=False)
             else:
                 (xdim,) = darray[xname].dims
                 (huedim,) = darray[huename].dims
@@ -121,17 +119,15 @@ def _infer_line_data(
             yname, huename = _infer_xy_labels(darray=darray, x=y, y=hue)
             yplt = darray[yname]
             if yplt.ndim > 1:
-                if huename in darray.dims:
-                    otherindex = 1 if darray.dims.index(huename) == 0 else 0
-                    otherdim = darray.dims[otherindex]
-                    xplt = darray.transpose(otherdim, huename, transpose_coords=False)
-                    yplt = yplt.transpose(otherdim, huename, transpose_coords=False)
-                else:
+                if huename not in darray.dims:
                     raise ValueError(
-                        "For 2D inputs, hue must be a dimension"
-                        " i.e. one of " + repr(darray.dims)
+                        f"For 2D inputs, hue must be a dimension i.e. one of {repr(darray.dims)}"
                     )
 
+                otherindex = 1 if darray.dims.index(huename) == 0 else 0
+                otherdim = darray.dims[otherindex]
+                xplt = darray.transpose(otherdim, huename, transpose_coords=False)
+                yplt = yplt.transpose(otherdim, huename, transpose_coords=False)
             else:
                 (ydim,) = darray[yname].dims
                 (huedim,) = darray[huename].dims
@@ -204,11 +200,9 @@ def _prepare_plot1d_data(
         # Array is now ready to be stacked:
         darray = darray.stack(_stacked_dim=darray.dims)
 
-    # Broadcast together all the chosen variables:
-    plts = dict(y=darray)
-    plts.update(
-        {k: darray.coords[v] for k, v in coords_to_plot.items() if v is not None}
-    )
+    plts = dict(y=darray) | {
+        k: darray.coords[v] for k, v in coords_to_plot.items() if v is not None
+    }
     plts = dict(zip(plts.keys(), broadcast(*(plts.values()))))
 
     return plts
@@ -277,28 +271,24 @@ def plot(
 
     if ndims == 0 or darray.size == 0:
         raise TypeError("No numeric data to plot.")
-    if ndims in (1, 2):
+    if ndims in {1, 2}:
         if row or col:
             kwargs["subplot_kws"] = subplot_kws
             kwargs["row"] = row
             kwargs["col"] = col
             kwargs["col_wrap"] = col_wrap
-        if ndims == 1:
+        if ndims != 1 and ndims == 2 and hue or ndims == 1:
             plotfunc = line
             kwargs["hue"] = hue
         elif ndims == 2:
-            if hue:
-                plotfunc = line
-                kwargs["hue"] = hue
-            else:
-                plotfunc = pcolormesh
-                kwargs["subplot_kws"] = subplot_kws
+            plotfunc = pcolormesh
+            kwargs["subplot_kws"] = subplot_kws
+    elif row or col or hue:
+        raise ValueError(
+            "Only 1d and 2d plots are supported for facets in xarray. "
+            "See the package `Seaborn` for more options."
+        )
     else:
-        if row or col or hue:
-            raise ValueError(
-                "Only 1d and 2d plots are supported for facets in xarray. "
-                "See the package `Seaborn` for more options."
-            )
         plotfunc = hist
 
     kwargs["ax"] = ax
@@ -475,7 +465,7 @@ def line(
     # Handle facetgrids first
     if row or col:
         allargs = locals().copy()
-        allargs.update(allargs.pop("kwargs"))
+        allargs |= allargs.pop("kwargs")
         allargs.pop("darray")
         return _easy_facetgrid(darray, line, kind="line", **allargs)
 
@@ -491,7 +481,7 @@ def line(
         )
 
     # The allargs dict passed to _easy_facetgrid above contains args
-    if args == ():
+    if not args:
         args = kwargs.pop("args", ())
     else:
         assert "args" not in kwargs
@@ -697,7 +687,7 @@ def hist(
         Additional keyword arguments to :py:func:`matplotlib:matplotlib.pyplot.hist`.
 
     """
-    assert len(args) == 0
+    assert not args
 
     if darray.ndim == 0 or darray.size == 0:
         # TypeError to be consistent with pandas
@@ -845,53 +835,53 @@ def _plot1d(plotfunc):
     plotfunc.__doc__ = f"{plotfunc.__doc__}\n{commondoc}"
 
     @functools.wraps(
-        plotfunc, assigned=("__module__", "__name__", "__qualname__", "__doc__")
-    )
+            plotfunc, assigned=("__module__", "__name__", "__qualname__", "__doc__")
+        )
     def newplotfunc(
-        darray: DataArray,
-        *args: Any,
-        x: Hashable | None = None,
-        y: Hashable | None = None,
-        z: Hashable | None = None,
-        hue: Hashable | None = None,
-        hue_style: HueStyleOptions = None,
-        markersize: Hashable | None = None,
-        linewidth: Hashable | None = None,
-        row: Hashable | None = None,
-        col: Hashable | None = None,
-        col_wrap: int | None = None,
-        ax: Axes | None = None,
-        figsize: Iterable[float] | None = None,
-        size: float | None = None,
-        aspect: float | None = None,
-        xincrease: bool | None = True,
-        yincrease: bool | None = True,
-        add_legend: bool | None = None,
-        add_colorbar: bool | None = None,
-        add_labels: bool | Iterable[bool] = True,
-        add_title: bool = True,
-        subplot_kws: dict[str, Any] | None = None,
-        xscale: ScaleOptions = None,
-        yscale: ScaleOptions = None,
-        xticks: ArrayLike | None = None,
-        yticks: ArrayLike | None = None,
-        xlim: ArrayLike | None = None,
-        ylim: ArrayLike | None = None,
-        cmap: str | Colormap | None = None,
-        vmin: float | None = None,
-        vmax: float | None = None,
-        norm: Normalize | None = None,
-        extend: ExtendOptions = None,
-        levels: ArrayLike | None = None,
-        **kwargs,
-    ) -> Any:
+            darray: DataArray,
+            *args: Any,
+            x: Hashable | None = None,
+            y: Hashable | None = None,
+            z: Hashable | None = None,
+            hue: Hashable | None = None,
+            hue_style: HueStyleOptions = None,
+            markersize: Hashable | None = None,
+            linewidth: Hashable | None = None,
+            row: Hashable | None = None,
+            col: Hashable | None = None,
+            col_wrap: int | None = None,
+            ax: Axes | None = None,
+            figsize: Iterable[float] | None = None,
+            size: float | None = None,
+            aspect: float | None = None,
+            xincrease: bool | None = True,
+            yincrease: bool | None = True,
+            add_legend: bool | None = None,
+            add_colorbar: bool | None = None,
+            add_labels: bool | Iterable[bool] = True,
+            add_title: bool = True,
+            subplot_kws: dict[str, Any] | None = None,
+            xscale: ScaleOptions = None,
+            yscale: ScaleOptions = None,
+            xticks: ArrayLike | None = None,
+            yticks: ArrayLike | None = None,
+            xlim: ArrayLike | None = None,
+            ylim: ArrayLike | None = None,
+            cmap: str | Colormap | None = None,
+            vmin: float | None = None,
+            vmax: float | None = None,
+            norm: Normalize | None = None,
+            extend: ExtendOptions = None,
+            levels: ArrayLike | None = None,
+            **kwargs,
+        ) -> Any:
         # All 1d plots in xarray share this function signature.
         # Method signature below should be consistent.
 
         plt = import_matplotlib_pyplot()
 
         if subplot_kws is None:
-            subplot_kws = dict()
+            subplot_kws = {}
 
         # Handle facetgrids first
         if row or col:
@@ -911,7 +901,7 @@ def _plot1d(plotfunc):
             raise TypeError("No numeric data to plot.")
 
         # The allargs dict passed to _easy_facetgrid above contains args
-        if args == ():
+        if not args:
             args = kwargs.pop("args", ())
 
         if args:
@@ -1391,45 +1381,45 @@ def _plot2d(plotfunc):
     plotfunc.__doc__ = f"{plotfunc.__doc__}\n{commondoc}"
 
     @functools.wraps(
-        plotfunc, assigned=("__module__", "__name__", "__qualname__", "__doc__")
-    )
+            plotfunc, assigned=("__module__", "__name__", "__qualname__", "__doc__")
+        )
     def newplotfunc(
-        darray: DataArray,
-        *args: Any,
-        x: Hashable | None = None,
-        y: Hashable | None = None,
-        figsize: Iterable[float] | None = None,
-        size: float | None = None,
-        aspect: float | None = None,
-        ax: Axes | None = None,
-        row: Hashable | None = None,
-        col: Hashable | None = None,
-        col_wrap: int | None = None,
-        xincrease: bool | None = True,
-        yincrease: bool | None = True,
-        add_colorbar: bool | None = None,
-        add_labels: bool = True,
-        vmin: float | None = None,
-        vmax: float | None = None,
-        cmap: str | Colormap | None = None,
-        center: float | None = None,
-        robust: bool = False,
-        extend: ExtendOptions = None,
-        levels: ArrayLike | None = None,
-        infer_intervals=None,
-        colors: str | ArrayLike | None = None,
-        subplot_kws: dict[str, Any] | None = None,
-        cbar_ax: Axes | None = None,
-        cbar_kwargs: dict[str, Any] | None = None,
-        xscale: ScaleOptions = None,
-        yscale: ScaleOptions = None,
-        xticks: ArrayLike | None = None,
-        yticks: ArrayLike | None = None,
-        xlim: ArrayLike | None = None,
-        ylim: ArrayLike | None = None,
-        norm: Normalize | None = None,
-        **kwargs: Any,
-    ) -> Any:
+            darray: DataArray,
+            *args: Any,
+            x: Hashable | None = None,
+            y: Hashable | None = None,
+            figsize: Iterable[float] | None = None,
+            size: float | None = None,
+            aspect: float | None = None,
+            ax: Axes | None = None,
+            row: Hashable | None = None,
+            col: Hashable | None = None,
+            col_wrap: int | None = None,
+            xincrease: bool | None = True,
+            yincrease: bool | None = True,
+            add_colorbar: bool | None = None,
+            add_labels: bool = True,
+            vmin: float | None = None,
+            vmax: float | None = None,
+            cmap: str | Colormap | None = None,
+            center: float | None = None,
+            robust: bool = False,
+            extend: ExtendOptions = None,
+            levels: ArrayLike | None = None,
+            infer_intervals=None,
+            colors: str | ArrayLike | None = None,
+            subplot_kws: dict[str, Any] | None = None,
+            cbar_ax: Axes | None = None,
+            cbar_kwargs: dict[str, Any] | None = None,
+            xscale: ScaleOptions = None,
+            yscale: ScaleOptions = None,
+            xticks: ArrayLike | None = None,
+            yticks: ArrayLike | None = None,
+            xlim: ArrayLike | None = None,
+            ylim: ArrayLike | None = None,
+            norm: Normalize | None = None,
+            **kwargs: Any,
+        ) -> Any:
         # All 2d plots in xarray share this function signature.
 
         if args:
@@ -1466,7 +1456,7 @@ def _plot2d(plotfunc):
                 vmin, vmax, robust = None, None, False
 
         if subplot_kws is None:
-            subplot_kws = dict()
+            subplot_kws = {}
 
         if plotfunc.__name__ == "surface" and not kwargs.get("_is_facetgrid", False):
             if ax is None:
@@ -2002,8 +1992,7 @@ def contour(
 
     Wraps :py:func:`matplotlib:matplotlib.pyplot.contour`.
     """
-    primitive = ax.contour(x, y, z, **kwargs)
-    return primitive
+    return ax.contour(x, y, z, **kwargs)
 
 
 @overload
@@ -2138,8 +2127,7 @@ def contourf(
 
     Wraps :py:func:`matplotlib:matplotlib.pyplot.contourf`.
     """
-    primitive = ax.contourf(x, y, z, **kwargs)
-    return primitive
+    return ax.contourf(x, y, z, **kwargs)
 
 
 @overload
@@ -2285,14 +2273,11 @@ def pcolormesh(
     # decide on a default for infer_intervals (GH781)
     x = np.asarray(x)
     if infer_intervals is None:
-        if hasattr(ax, "projection"):
-            if len(x.shape) == 1:
-                infer_intervals = True
-            else:
-                infer_intervals = False
-        else:
-            infer_intervals = True
-
+        infer_intervals = bool(
+            hasattr(ax, "projection")
+            and len(x.shape) == 1
+            or not hasattr(ax, "projection")
+        )
     if any(np.issubdtype(k.dtype, str) for k in (x, y)):
         # do not infer intervals if any axis contains str ticks, see #6775
         infer_intervals = False
@@ -2461,5 +2446,4 @@ def surface(
 
     Wraps :py:meth:`matplotlib:mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.
     """
-    primitive = ax.plot_surface(x, y, z, **kwargs)
-    return primitive
+    return ax.plot_surface(x, y, z, **kwargs)

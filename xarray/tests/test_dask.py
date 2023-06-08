@@ -103,9 +103,7 @@ class TestVariable(DaskTestCase):
             assert rechunked.chunks == expected
             self.assertLazyAndIdentical(self.eager_var, rechunked)
 
-            expected_chunksizes = {
-                dim: chunks for dim, chunks in zip(self.lazy_var.dims, expected)
-            }
+            expected_chunksizes = dict(zip(self.lazy_var.dims, expected))
             assert rechunked.chunksizes == expected_chunksizes
 
     def test_indexing(self):
@@ -352,17 +350,13 @@ class TestDataArrayAndDataset(DaskTestCase):
             assert rechunked.chunks == expected
             self.assertLazyAndIdentical(self.eager_array, rechunked)
 
-            expected_chunksizes = {
-                dim: chunks for dim, chunks in zip(self.lazy_array.dims, expected)
-            }
+            expected_chunksizes = dict(zip(self.lazy_array.dims, expected))
             assert rechunked.chunksizes == expected_chunksizes
 
             # Test Dataset
             lazy_dataset = self.lazy_array.to_dataset()
             eager_dataset = self.eager_array.to_dataset()
-            expected_chunksizes = {
-                dim: chunks for dim, chunks in zip(lazy_dataset.dims, expected)
-            }
+            expected_chunksizes = dict(zip(lazy_dataset.dims, expected))
             rechunked = lazy_dataset.chunk(chunks)
 
             # Dataset.chunks has a different return type to DataArray.chunks - see issue #5843
@@ -1570,7 +1564,7 @@ def test_normalize_token_with_backend(map_ds):
     with create_tmp_file(allow_cleanup_failure=ON_WINDOWS) as tmp_file:
         map_ds.to_netcdf(tmp_file)
         read = xr.open_dataset(tmp_file)
-        assert not dask.base.tokenize(map_ds) == dask.base.tokenize(read)
+        assert dask.base.tokenize(map_ds) != dask.base.tokenize(read)
         read.close()
 
 

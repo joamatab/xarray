@@ -174,9 +174,8 @@ def list_equiv(first, second):
     equiv = True
     if len(first) != len(second):
         return False
-    else:
-        for f, s in zip(first, second):
-            equiv = equiv and equivalent(f, s)
+    for f, s in zip(first, second):
+        equiv = equiv and equivalent(f, s)
     return equiv
 
 
@@ -436,7 +435,7 @@ def compat_dict_union(
     """
     new_dict = dict(first_dict)
     update_safety_check(first_dict, second_dict, compat)
-    new_dict.update(second_dict)
+    new_dict |= second_dict
     return new_dict
 
 
@@ -617,9 +616,7 @@ class ReprObject:
         return self._value
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, ReprObject):
-            return self._value == other._value
-        return False
+        return self._value == other._value if isinstance(other, ReprObject) else False
 
     def __hash__(self) -> int:
         return hash((type(self), self._value))
@@ -668,21 +665,17 @@ def read_magic_number_from_file(filename_or_obj, count=8) -> bytes:
 def try_read_magic_number_from_path(pathlike, count=8) -> bytes | None:
     if isinstance(pathlike, str) or hasattr(pathlike, "__fspath__"):
         path = os.fspath(pathlike)
-        try:
+        with contextlib.suppress(FileNotFoundError, TypeError):
             with open(path, "rb") as f:
                 return read_magic_number_from_file(f, count)
-        except (FileNotFoundError, TypeError):
-            pass
     return None
 
 
 def try_read_magic_number_from_file_or_path(filename_or_obj, count=8) -> bytes | None:
     magic_number = try_read_magic_number_from_path(filename_or_obj, count)
     if magic_number is None:
-        try:
+        with contextlib.suppress(TypeError):
             magic_number = read_magic_number_from_file(filename_or_obj, count)
-        except TypeError:
-            pass
     return magic_number
 
 
@@ -833,7 +826,7 @@ def get_temp_dimname(dims: Container[Hashable], new_dim: Hashable) -> Hashable:
         -> ['__rolling']
     """
     while new_dim in dims:
-        new_dim = "_" + str(new_dim)
+        new_dim = f"_{str(new_dim)}"
     return new_dim
 
 
@@ -853,8 +846,7 @@ def drop_dims_from_indexers(
     """
 
     if missing_dims == "raise":
-        invalid = indexers.keys() - set(dims)
-        if invalid:
+        if invalid := indexers.keys() - set(dims):
             raise ValueError(
                 f"Dimensions {invalid} do not exist. Expected one or more of {dims}"
             )
@@ -901,8 +893,7 @@ def drop_missing_dims(
 
     if missing_dims == "raise":
         supplied_dims_set = {val for val in supplied_dims if val is not ...}
-        invalid = supplied_dims_set - set(dims)
-        if invalid:
+        if invalid := supplied_dims_set - set(dims):
             raise ValueError(
                 f"Dimensions {invalid} do not exist. Expected one or more of {dims}"
             )
@@ -910,8 +901,7 @@ def drop_missing_dims(
         return supplied_dims
 
     elif missing_dims == "warn":
-        invalid = set(supplied_dims) - set(dims)
-        if invalid:
+        if invalid := set(supplied_dims) - set(dims):
             warnings.warn(
                 f"Dimensions {invalid} do not exist. Expected one or more of {dims}"
             )
@@ -983,9 +973,7 @@ def parse_dims(
         Input dimensions as a tuple.
     """
     if dim is None or dim is ...:
-        if replace_none:
-            return all_dims
-        return dim
+        return all_dims if replace_none else dim
     if isinstance(dim, str):
         dim = (dim,)
     if check_exists:
@@ -1047,20 +1035,7 @@ def parse_ordered_dims(
     parsed_dims : tuple of Hashable
         Input dimensions as a tuple.
     """
-    if dim is not None and dim is not ... and not isinstance(dim, str) and ... in dim:
-        dims_set: set[Hashable | ellipsis] = set(dim)
-        all_dims_set = set(all_dims)
-        if check_exists:
-            _check_dims(dims_set, all_dims_set)
-        if len(all_dims_set) != len(all_dims):
-            raise ValueError("Cannot use ellipsis with repeated dims")
-        dims = tuple(dim)
-        if dims.count(...) > 1:
-            raise ValueError("More than one ellipsis supplied")
-        other_dims = tuple(d for d in all_dims if d not in dims_set)
-        idx = dims.index(...)
-        return dims[:idx] + other_dims + dims[idx + 1 :]
-    else:
+    if dim is None or dim is ... or isinstance(dim, str) or ... not in dim:
         # mypy cannot resolve that the sequence cannot contain "..."
         return parse_dims(  # type: ignore[call-overload]
             dim=dim,
@@ -1068,6 +1043,18 @@ def parse_ordered_dims(
             check_exists=check_exists,
             replace_none=replace_none,
         )
+    dims_set: set[Hashable | ellipsis] = set(dim)
+    all_dims_set = set(all_dims)
+    if check_exists:
+        _check_dims(dims_set, all_dims_set)
+    if len(all_dims_set) != len(all_dims):
+        raise ValueError("Cannot use ellipsis with repeated dims")
+    dims = tuple(dim)
+    if dims.count(...) > 1:
+        raise ValueError("More than one ellipsis supplied")
+    other_dims = tuple(d for d in all_dims if d not in dims_set)
+    idx = dims.index(...)
+    return dims[:idx] + other_dims + dims[idx + 1 :]
 
 
 def _check_dims(dim: set[Hashable | ellipsis], all_dims: set[Hashable]) -> None:
@@ -1102,10 +1089,7 @@ class UncachedAccessor(Generic[_Accessor]):
         ...
 
     def __get__(self, obj: None | object, cls) -> type[_Accessor] | _Accessor:
-        if obj is None:
-            return self._accessor
-
-        return self._accessor(obj)  # type: ignore  # assume it is a valid accessor!
+        return self._accessor if obj is None else self._accessor(obj)
 
 
 # Singleton type, as per https://github.com/python/typing/pull/240
@@ -1135,10 +1119,8 @@ def contains_only_dask_or_numpy(obj) -> bool:
         obj = obj._to_temp_dataset()
 
     return all(
-        [
-            isinstance(var.data, np.ndarray) or is_duck_dask_array(var.data)
-            for var in obj.variables.values()
-        ]
+        isinstance(var.data, np.ndarray) or is_duck_dask_array(var.data)
+        for var in obj.variables.values()
     )
 
 
@@ -1250,13 +1232,10 @@ def _resolve_doubly_passed_kwarg(
     # if in kwargs_dict but not passed explicitly then just pass kwargs_dict through unaltered
     if kwarg_name in kwargs_dict and passed_kwarg_value is None:
         pass
-    # if passed explicitly but not in kwargs_dict then use that
     elif kwarg_name not in kwargs_dict and passed_kwarg_value is not None:
         kwargs_dict[kwarg_name] = passed_kwarg_value
-    # if in neither then use default
-    elif kwarg_name not in kwargs_dict and passed_kwarg_value is None:
+    elif kwarg_name not in kwargs_dict:
         kwargs_dict[kwarg_name] = default
-    # if in both then raise
     else:
         raise ValueError(
             f"argument {kwarg_name} cannot be passed both as a keyword argument and within "
