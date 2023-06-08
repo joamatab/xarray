@@ -265,20 +265,16 @@ def test_to_offset_quarter(month_label, month_int, multiple, offset_str):
     if multiple and month_int:
         expected = offset_type(n=multiple, month=month_int)
     elif multiple:
-        if month_int:
-            expected = offset_type(n=multiple)
-        else:
-            if offset_type == QuarterBegin:
-                expected = offset_type(n=multiple, month=1)
-            elif offset_type == QuarterEnd:
-                expected = offset_type(n=multiple, month=12)
+        if offset_type == QuarterBegin:
+            expected = offset_type(n=multiple, month=1)
+        elif offset_type == QuarterEnd:
+            expected = offset_type(n=multiple, month=12)
     elif month_int:
         expected = offset_type(month=month_int)
-    else:
-        if offset_type == QuarterBegin:
-            expected = offset_type(month=1)
-        elif offset_type == QuarterEnd:
-            expected = offset_type(month=12)
+    elif offset_type == QuarterBegin:
+        expected = offset_type(month=1)
+    elif offset_type == QuarterEnd:
+        expected = offset_type(month=12)
     assert result == expected
 
 
@@ -548,10 +544,7 @@ def test_days_in_month_non_december(calendar):
 
 
 def test_days_in_month_december(calendar):
-    if calendar == "360_day":
-        expected = 30
-    else:
-        expected = 31
+    expected = 30 if calendar == "360_day" else 31
     date_type = get_date_type(calendar)
     reference = date_type(1, 12, 5)
     assert _days_in_month(reference) == expected

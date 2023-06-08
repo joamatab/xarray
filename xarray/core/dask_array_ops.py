@@ -21,9 +21,7 @@ def dask_rolling_wrapper(moving_func, a, window, min_count=None, axis=-1):
     out = da.map_blocks(
         moving_func, ag, window, min_count=min_count, axis=axis, dtype=a.dtype
     )
-    # trim array
-    result = da.overlap.trim_internal(out, depth)
-    return result
+    return da.overlap.trim_internal(out, depth)
 
 
 def least_squares(lhs, rhs, rcond=None, skipna=False):

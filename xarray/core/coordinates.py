@@ -108,8 +108,7 @@ class Coordinates(Mapping[Hashable, "T_DataArray"]):
             ordered_dims = list(self.dims)
         elif set(ordered_dims) != set(self.dims):
             raise ValueError(
-                "ordered_dims must match dims, but does not: "
-                "{} vs {}".format(ordered_dims, self.dims)
+                f"ordered_dims must match dims, but does not: {ordered_dims} vs {self.dims}"
             )
 
         if len(ordered_dims) == 0:
@@ -315,7 +314,7 @@ class DatasetCoordinates(Coordinates):
         # TODO(shoyer): once ._indexes is always populated by a dict, modify
         # it to update inplace instead.
         original_indexes = dict(self._data.xindexes)
-        original_indexes.update(indexes)
+        original_indexes |= indexes
         self._data._indexes = original_indexes
 
     def _maybe_drop_multiindex_coords(self, coords: set[Hashable]) -> None:
@@ -395,7 +394,7 @@ class DataArrayCoordinates(Coordinates["T_DataArray"]):
         # TODO(shoyer): once ._indexes is always populated by a dict, modify
         # it to update inplace instead.
         original_indexes = dict(self._data.xindexes)
-        original_indexes.update(indexes)
+        original_indexes |= indexes
         self._data._indexes = original_indexes
 
     def _maybe_drop_multiindex_coords(self, coords: set[Hashable]) -> None:

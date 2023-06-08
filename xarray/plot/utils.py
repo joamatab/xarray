@@ -261,40 +261,36 @@ def _determine_cmap_params(
     if norm is not None:
         if norm.vmin is None:
             norm.vmin = vmin
-        else:
-            if not vmin_was_none and vmin != norm.vmin:
-                raise ValueError("Cannot supply vmin and a norm with a different vmin.")
+        elif vmin_was_none or vmin == norm.vmin:
             vmin = norm.vmin
 
+        else:
+            raise ValueError("Cannot supply vmin and a norm with a different vmin.")
         if norm.vmax is None:
             norm.vmax = vmax
-        else:
-            if not vmax_was_none and vmax != norm.vmax:
-                raise ValueError("Cannot supply vmax and a norm with a different vmax.")
+        elif vmax_was_none or vmax == norm.vmax:
             vmax = norm.vmax
 
+        else:
+            raise ValueError("Cannot supply vmax and a norm with a different vmax.")
     # if BoundaryNorm, then set levels
     if isinstance(norm, mpl.colors.BoundaryNorm):
         levels = norm.boundaries
 
-    # Choose default colormaps if not provided
     if cmap is None:
-        if divergent:
-            cmap = OPTIONS["cmap_divergent"]
-        else:
-            cmap = OPTIONS["cmap_sequential"]
-
+        cmap = OPTIONS["cmap_divergent"] if divergent else OPTIONS["cmap_sequential"]
     # Handle discrete levels
     if levels is not None:
-        if is_scalar(levels):
-            if user_minmax:
+        if user_minmax:
+            if is_scalar(levels):
                 levels = np.linspace(vmin, vmax, levels)
-            elif levels == 1:
+        elif levels == 1:
+            if is_scalar(levels):
                 levels = np.asarray([(vmin + vmax) / 2])
-            else:
-                # N in MaxNLocator refers to bins, not ticks
-                ticker = mpl.ticker.MaxNLocator(levels - 1)
-                levels = ticker.tick_values(vmin, vmax)
+        elif is_scalar(levels):
+            # N in MaxNLocator refers to bins, not ticks
+            ticker = mpl.ticker.MaxNLocator(levels - 1)
+            levels = ticker.tick_values(vmin, vmax)
         vmin, vmax = levels[0], levels[-1]
 
     # GH3734
@@ -367,7 +363,7 @@ def _infer_xy_labels_3d(
     # If rgb dimension is still unknown, there must be two or three dimensions
     # in could_be_color.  We therefore warn, and use a heuristic to break ties.
     if rgb is None:
-        assert len(could_be_color) in (2, 3)
+        assert len(could_be_color) in {2, 3}
         rgb = could_be_color[-1]
         warnings.warn(
             "Several dimensions of this array could be colors.  Xarray "
@@ -498,11 +494,7 @@ def _maybe_gca(**subplot_kws: Any) -> Axes:
     f = plt.gcf()
 
     # only call gca if an active axes exists
-    if f.axes:
-        # can not pass kwargs to active axes
-        return plt.gca()
-
-    return plt.axes(**subplot_kws)
+    return plt.gca() if f.axes else plt.axes(**subplot_kws)
 
 
 def _get_units_from_attrs(da) -> str:
@@ -510,14 +502,13 @@ def _get_units_from_attrs(da) -> str:
     pint_array_type = DuckArrayModule("pint").type
     units = " [{}]"
     if isinstance(da.data, pint_array_type):
-        units = units.format(str(da.data.units))
+        return units.format(str(da.data.units))
     elif da.attrs.get("units"):
-        units = units.format(da.attrs["units"])
+        return units.format(da.attrs["units"])
     elif da.attrs.get("unit"):
-        units = units.format(da.attrs["unit"])
+        return units.format(da.attrs["unit"])
     else:
-        units = ""
-    return units
+        return ""
 
 
 def label_from_attrs(da, extra: str = "") -> str:
@@ -728,9 +719,7 @@ def _add_colorbar(primitive, ax, cbar_ax, cbar_kwargs, cmap_params):
         cbar_kwargs.pop("extend")
 
     fig = ax.get_figure()
-    cbar = fig.colorbar(primitive, **cbar_kwargs)
-
-    return cbar
+    return fig.colorbar(primitive, **cbar_kwargs)
 
 
 def _rescale_imshow_rgb(darray, vmin, vmax, robust):
@@ -826,15 +815,14 @@ def _is_monotonic(coord, axis=0):
     """
     if coord.shape[axis] < 3:
         return True
-    else:
-        n = coord.shape[axis]
-        delta_pos = coord.take(np.arange(1, n), axis=axis) >= coord.take(
-            np.arange(0, n - 1), axis=axis
-        )
-        delta_neg = coord.take(np.arange(1, n), axis=axis) <= coord.take(
-            np.arange(0, n - 1), axis=axis
-        )
-        return np.all(delta_pos) or np.all(delta_neg)
+    n = coord.shape[axis]
+    delta_pos = coord.take(np.arange(1, n), axis=axis) >= coord.take(
+        np.arange(0, n - 1), axis=axis
+    )
+    delta_neg = coord.take(np.arange(1, n), axis=axis) <= coord.take(
+        np.arange(0, n - 1), axis=axis
+    )
+    return np.all(delta_pos) or np.all(delta_neg)
 
 
 def _infer_interval_breaks(coord, axis=0, scale=None, check_monotonic=False):
@@ -880,10 +868,7 @@ def _infer_interval_breaks(coord, axis=0, scale=None, check_monotonic=False):
     interval_breaks = np.concatenate(
         [first, coord[trim_last] + deltas, last], axis=axis
     )
-    if scale == "log":
-        # Recovert the intervals into the linear space
-        return np.power(10, interval_breaks)
-    return interval_breaks
+    return np.power(10, interval_breaks) if scale == "log" else interval_breaks
 
 
 def _process_cmap_cbar_kwargs(
@@ -946,7 +931,7 @@ def _process_cmap_cbar_kwargs(
     }
 
     cmap_args = getfullargspec(_determine_cmap_params).args
-    cmap_kwargs.update((a, kwargs[a]) for a in cmap_args if a in kwargs)
+    cmap_kwargs |= ((a, kwargs[a]) for a in cmap_args if a in kwargs)
     if not _is_facetgrid:
         cmap_params = _determine_cmap_params(**cmap_kwargs)
     else:
@@ -963,8 +948,7 @@ def _get_nice_quiver_magnitude(u, v):
 
     ticker = mpl.ticker.MaxNLocator(3)
     mean = np.mean(np.hypot(u.to_numpy(), v.to_numpy()))
-    magnitude = ticker.tick_values(0, mean)[-2]
-    return magnitude
+    return ticker.tick_values(0, mean)[-2]
 
 
 # Copied from matplotlib, tweaked so func can return strings.
@@ -1236,8 +1220,8 @@ def _infer_meta_data(ds, x, y, hue, hue_style, add_guide, funcname):
             )
 
         if add_guide is None or add_guide is True:
-            add_colorbar = True if hue_style == "continuous" else False
-            add_legend = True if hue_style == "discrete" else False
+            add_colorbar = hue_style == "continuous"
+            add_legend = hue_style == "discrete"
         else:
             add_colorbar = False
             add_legend = False
@@ -1461,12 +1445,10 @@ class _Normalize(Sequence):
         diff_maxy_miny = np.max(y) - np.min(y)
         if diff_maxy_miny == 0:
             # Use default with if y is constant:
-            widths = xdefault + 0 * y
-        else:
-            # Normalize inbetween xmin and xmax:
-            k = (y - np.min(y)) / diff_maxy_miny
-            widths = xmin + k * (xmax - xmin)
-        return widths
+            return xdefault + 0 * y
+        # Normalize inbetween xmin and xmax:
+        k = (y - np.min(y)) / diff_maxy_miny
+        return xmin + k * (xmax - xmin)
 
     @overload
     def _indexes_centered(self, x: np.ndarray) -> np.ndarray:
@@ -1574,12 +1556,11 @@ class _Normalize(Sequence):
         array([1, 3, 5])
         """
         val: None | np.ndarray
-        if self.data_is_numeric:
-            val = None
-        else:
-            val = self._indexes_centered(self._data_unique_index)
-
-        return val
+        return (
+            None
+            if self.data_is_numeric
+            else self._indexes_centered(self._data_unique_index)
+        )
 
     @property
     def levels(self) -> np.ndarray:
@@ -1676,23 +1657,18 @@ def _determine_guide(
     if (add_colorbar) and hueplt_norm.data is None:
         raise KeyError("Cannot create a colorbar when hue is None.")
     if add_colorbar is None:
-        if hueplt_norm.data is not None:
-            add_colorbar = True
-        else:
-            add_colorbar = False
-
+        add_colorbar = hueplt_norm.data is not None
     if add_legend and hueplt_norm.data is None and sizeplt_norm.data is None:
         raise KeyError("Cannot create a legend when hue and markersize is None.")
     if add_legend is None:
-        if (
+        add_legend = (
             not add_colorbar
-            and (hueplt_norm.data is not None and hueplt_norm.data_is_numeric is False)
+            and (
+                hueplt_norm.data is not None
+                and hueplt_norm.data_is_numeric is False
+            )
             or sizeplt_norm.data is not None
-        ):
-            add_legend = True
-        else:
-            add_legend = False
-
+        )
     return add_colorbar, add_legend
 
 

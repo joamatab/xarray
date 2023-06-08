@@ -360,11 +360,7 @@ def linkcode_resolve(domain, info):
     except OSError:
         lineno = None
 
-    if lineno:
-        linespec = f"#L{lineno}-L{lineno + len(source) - 1}"
-    else:
-        linespec = ""
-
+    linespec = f"#L{lineno}-L{lineno + len(source) - 1}" if lineno else ""
     fn = os.path.relpath(fn, start=os.path.dirname(xarray.__file__))
 
     if "+" in xarray.__version__:

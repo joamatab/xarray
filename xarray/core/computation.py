@@ -134,8 +134,8 @@ class _UFuncSignature:
         )
 
     def __str__(self):
-        lhs = ",".join("({})".format(",".join(dims)) for dims in self.input_core_dims)
-        rhs = ",".join("({})".format(",".join(dims)) for dims in self.output_core_dims)
+        lhs = ",".join(f'({",".join(dims)})' for dims in self.input_core_dims)
+        rhs = ",".join(f'({",".join(dims)})' for dims in self.output_core_dims)
         return f"{lhs}->{rhs}"
 
     def to_gufunc_string(self, exclude_dims=frozenset()):
@@ -254,8 +254,7 @@ def build_output_coords_and_indexes(
     output_coords = []
     output_indexes = []
     for output_dims in signature.output_core_dims:
-        dropped_dims = signature.all_input_core_dims - set(output_dims)
-        if dropped_dims:
+        if dropped_dims := signature.all_input_core_dims - set(output_dims):
             filtered_coords = {
                 k: v for k, v in merged_vars.items() if dropped_dims.isdisjoint(v.dims)
             }
@@ -406,10 +405,10 @@ def apply_dict_of_variables_vfunc(
     names = join_dict_keys(args, how=join)
     grouped_by_name = collect_dict_values(args, names, fill_value)
 
-    result_vars = {}
-    for name, variable_args in zip(names, grouped_by_name):
-        result_vars[name] = func(*variable_args)
-
+    result_vars = {
+        name: func(*variable_args)
+        for name, variable_args in zip(names, grouped_by_name)
+    }
     if signature.num_outputs > 1:
         return _unpack_dict_tuples(result_vars, signature.num_outputs)
     else:
@@ -427,7 +426,7 @@ def _fast_dataset(
     """
     from xarray.core.dataset import Dataset
 
-    variables.update(coord_variables)
+    variables |= coord_variables
     coord_names = set(coord_variables)
     return Dataset._construct_direct(variables, coord_names, indexes=indexes)
 
@@ -546,11 +545,11 @@ def apply_groupby_func(func, *args):
     applied = (func(*zipped_args) for zipped_args in zip(*iterators))
     applied_example, applied = peek_at(applied)
     combine = first_groupby._combine
-    if isinstance(applied_example, tuple):
-        combined = tuple(combine(output) for output in zip(*applied))
-    else:
-        combined = combine(applied)
-    return combined
+    return (
+        tuple(combine(output) for output in zip(*applied))
+        if isinstance(applied_example, tuple)
+        else combine(applied)
+    )
 
 
 def unified_dim_sizes(
@@ -595,18 +594,13 @@ def broadcast_compat_data(
         return data
 
     set_old_dims = set(old_dims)
-    missing_core_dims = [d for d in core_dims if d not in set_old_dims]
-    if missing_core_dims:
+    if missing_core_dims := [d for d in core_dims if d not in set_old_dims]:
         raise ValueError(
-            "operand to apply_ufunc has required core dimensions {}, but "
-            "some of these dimensions are absent on an input variable: {}".format(
-                list(core_dims), missing_core_dims
-            )
+            f"operand to apply_ufunc has required core dimensions {list(core_dims)}, but some of these dimensions are absent on an input variable: {missing_core_dims}"
         )
 
     set_new_dims = set(new_dims)
-    unexpected_dims = [d for d in old_dims if d not in set_new_dims]
-    if unexpected_dims:
+    if unexpected_dims := [d for d in old_dims if d not in set_new_dims]:
         raise ValueError(
             "operand to apply_ufunc encountered unexpected "
             f"dimensions {unexpected_dims!r} on an input variable: these are core "
@@ -804,10 +798,7 @@ def apply_variable_ufunc(
         var.attrs = attrs
         output.append(var)
 
-    if signature.num_outputs == 1:
-        return output[0]
-    else:
-        return tuple(output)
+    return output[0] if signature.num_outputs == 1 else tuple(output)
 
 
 def apply_array_ufunc(func, *args, dask="forbidden"):
@@ -826,9 +817,7 @@ def apply_array_ufunc(func, *args, dask="forbidden"):
                 "cannot use dask='parallelized' for apply_ufunc "
                 "unless at least one input is an xarray object"
             )
-        elif dask == "allowed":
-            pass
-        else:
+        elif dask != "allowed":
             raise ValueError(f"unknown setting for dask array handling: {dask}")
     return func(*args)
 
@@ -1285,8 +1274,7 @@ def cov(
 
     if any(not isinstance(arr, DataArray) for arr in [da_a, da_b]):
         raise TypeError(
-            "Only xr.DataArray is supported."
-            "Given {}.".format([type(arr) for arr in [da_a, da_b]])
+            f"Only xr.DataArray is supported.Given {[type(arr) for arr in [da_a, da_b]]}."
         )
 
     return _cov_corr(da_a, da_b, dim=dim, ddof=ddof, method="cov")
@@ -1363,8 +1351,7 @@ def corr(da_a: T_DataArray, da_b: T_DataArray, dim: Dims = None) -> T_DataArray:
 
     if any(not isinstance(arr, DataArray) for arr in [da_a, da_b]):
         raise TypeError(
-            "Only xr.DataArray is supported."
-            "Given {}.".format([type(arr) for arr in [da_a, da_b]])
+            f"Only xr.DataArray is supported.Given {[type(arr) for arr in [da_a, da_b]]}."
         )
 
     return _cov_corr(da_a, da_b, dim=dim, method="corr")
@@ -1404,12 +1391,10 @@ def _cov_corr(
     if method == "cov":
         return cov  # type: ignore[return-value]
 
-    else:
-        # compute std + corr
-        da_a_std = da_a.std(dim=dim)
-        da_b_std = da_b.std(dim=dim)
-        corr = cov / (da_a_std * da_b_std)
-        return corr  # type: ignore[return-value]
+    # compute std + corr
+    da_a_std = da_a.std(dim=dim)
+    da_b_std = da_b.std(dim=dim)
+    return cov / (da_a_std * da_b_std)
 
 
 def cross(
@@ -1706,11 +1691,10 @@ def dot(
 
     if any(not isinstance(arr, (Variable, DataArray)) for arr in arrays):
         raise TypeError(
-            "Only xr.DataArray and xr.Variable are supported."
-            "Given {}.".format([type(arr) for arr in arrays])
+            f"Only xr.DataArray and xr.Variable are supported.Given {[type(arr) for arr in arrays]}."
         )
 
-    if len(arrays) == 0:
+    if not arrays:
         raise TypeError("At least one array should be given.")
 
     common_dims: set[Hashable] = set.intersection(*(set(arr.dims) for arr in arrays))
@@ -2152,7 +2136,7 @@ def unify_chunks(*objects: Dataset | DataArray) -> tuple[Dataset | DataArray, ..
     if not unify_chunks_args:
         return objects
 
-    chunkmanager = get_chunked_array_type(*[arg for arg in unify_chunks_args])
+    chunkmanager = get_chunked_array_type(*list(unify_chunks_args))
     _, chunked_data = chunkmanager.unify_chunks(*unify_chunks_args)
     chunked_data_iter = iter(chunked_data)
     out: list[Dataset | DataArray] = []

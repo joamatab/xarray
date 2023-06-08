@@ -79,22 +79,21 @@ def get_date_type(calendar, use_cftime=True):
     """Return the cftime date type for a given calendar name."""
     if cftime is None:
         raise ImportError("cftime is required for dates with non-standard calendars")
-    else:
-        if _is_standard_calendar(calendar) and not use_cftime:
-            return pd.Timestamp
+    if _is_standard_calendar(calendar) and not use_cftime:
+        return pd.Timestamp
 
-        calendars = {
-            "noleap": cftime.DatetimeNoLeap,
-            "360_day": cftime.Datetime360Day,
-            "365_day": cftime.DatetimeNoLeap,
-            "366_day": cftime.DatetimeAllLeap,
-            "gregorian": cftime.DatetimeGregorian,
-            "proleptic_gregorian": cftime.DatetimeProlepticGregorian,
-            "julian": cftime.DatetimeJulian,
-            "all_leap": cftime.DatetimeAllLeap,
-            "standard": cftime.DatetimeGregorian,
-        }
-        return calendars[calendar]
+    calendars = {
+        "noleap": cftime.DatetimeNoLeap,
+        "360_day": cftime.Datetime360Day,
+        "365_day": cftime.DatetimeNoLeap,
+        "366_day": cftime.DatetimeAllLeap,
+        "gregorian": cftime.DatetimeGregorian,
+        "proleptic_gregorian": cftime.DatetimeProlepticGregorian,
+        "julian": cftime.DatetimeJulian,
+        "all_leap": cftime.DatetimeAllLeap,
+        "standard": cftime.DatetimeGregorian,
+    }
+    return calendars[calendar]
 
 
 class BaseCFTimeOffset:
@@ -161,16 +160,10 @@ class BaseCFTimeOffset:
         return date == test_date
 
     def rollforward(self, date):
-        if self.onOffset(date):
-            return date
-        else:
-            return date + type(self)()
+        return date if self.onOffset(date) else date + type(self)()
 
     def rollback(self, date):
-        if self.onOffset(date):
-            return date
-        else:
-            return date - type(self)()
+        return date if self.onOffset(date) else date - type(self)()
 
     def __str__(self):
         return f"<{type(self).__name__}: n={self.n}>"
@@ -277,9 +270,8 @@ def _adjust_n_years(other, n, month, reference_day):
     if n > 0:
         if other.month < month or (other.month == month and other.day < reference_day):
             n -= 1
-    else:
-        if other.month > month or (other.month == month and other.day > reference_day):
-            n += 1
+    elif other.month > month or (other.month == month and other.day > reference_day):
+        n += 1
     return n
 
 
@@ -338,12 +330,11 @@ def roll_qtrday(other, n, month, day_option, modby=3):
             # pretend to roll back if on same month but
             # before compare_day
             n -= 1
-    else:
-        if months_since > 0 or (
+    elif months_since > 0 or (
             months_since == 0 and other.day > _get_day_of_month(other, day_option)
         ):
-            # make sure to roll forward, so negate
-            n += 1
+        # make sure to roll forward, so negate
+        n += 1
     return n
 
 
@@ -470,17 +461,11 @@ class QuarterBegin(QuarterOffset):
 
     def rollforward(self, date):
         """Roll date forward to nearest start of quarter"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date + QuarterBegin(month=self.month)
+        return date if self.onOffset(date) else date + QuarterBegin(month=self.month)
 
     def rollback(self, date):
         """Roll date backward to nearest start of quarter"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date - QuarterBegin(month=self.month)
+        return date if self.onOffset(date) else date - QuarterBegin(month=self.month)
 
 
 class QuarterEnd(QuarterOffset):
@@ -495,17 +480,11 @@ class QuarterEnd(QuarterOffset):
 
     def rollforward(self, date):
         """Roll date forward to nearest end of quarter"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date + QuarterEnd(month=self.month)
+        return date if self.onOffset(date) else date + QuarterEnd(month=self.month)
 
     def rollback(self, date):
         """Roll date backward to nearest end of quarter"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date - QuarterEnd(month=self.month)
+        return date if self.onOffset(date) else date - QuarterEnd(month=self.month)
 
 
 class YearOffset(BaseCFTimeOffset):
@@ -558,17 +537,11 @@ class YearBegin(YearOffset):
 
     def rollforward(self, date):
         """Roll date forward to nearest start of year"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date + YearBegin(month=self.month)
+        return date if self.onOffset(date) else date + YearBegin(month=self.month)
 
     def rollback(self, date):
         """Roll date backward to nearest start of year"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date - YearBegin(month=self.month)
+        return date if self.onOffset(date) else date - YearBegin(month=self.month)
 
 
 class YearEnd(YearOffset):
@@ -583,17 +556,11 @@ class YearEnd(YearOffset):
 
     def rollforward(self, date):
         """Roll date forward to nearest end of year"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date + YearEnd(month=self.month)
+        return date if self.onOffset(date) else date + YearEnd(month=self.month)
 
     def rollback(self, date):
         """Roll date backward to nearest end of year"""
-        if self.onOffset(date):
-            return date
-        else:
-            return date - YearEnd(month=self.month)
+        return date if self.onOffset(date) else date - YearEnd(month=self.month)
 
 
 class Day(Tick):
@@ -739,11 +706,10 @@ def to_offset(freq):
     BaseCFTimeOffset."""
     if isinstance(freq, BaseCFTimeOffset):
         return freq
-    else:
-        try:
-            freq_data = re.match(_PATTERN, freq).groupdict()
-        except AttributeError:
-            raise ValueError("Invalid frequency string provided")
+    try:
+        freq_data = re.match(_PATTERN, freq).groupdict()
+    except AttributeError:
+        raise ValueError("Invalid frequency string provided")
 
     freq = freq_data["freq"]
     multiples = freq_data["multiple"]
@@ -782,10 +748,7 @@ def normalize_date(date):
 
 def _maybe_normalize_date(date, normalize):
     """Round datetime down to midnight if normalize is True."""
-    if normalize:
-        return normalize_date(date)
-    else:
-        return date
+    return normalize_date(date) if normalize else date
 
 
 def _generate_linear_range(start, end, periods):
@@ -1295,11 +1258,10 @@ def date_range_like(source, calendar, use_cftime=None):
         # relaxed when addressing GitHub issue #7493.
         source_start = nanosecond_precision_timestamp(source_start)
         source_end = nanosecond_precision_timestamp(source_end)
-    else:
-        if isinstance(source, CFTimeIndex):
-            source_calendar = source.calendar
-        else:  # DataArray
-            source_calendar = source.dt.calendar
+    elif isinstance(source, CFTimeIndex):
+        source_calendar = source.calendar
+    else:  # DataArray
+        source_calendar = source.dt.calendar
 
     if calendar == source_calendar and is_np_datetime_like(source.dtype) ^ use_cftime:
         return source

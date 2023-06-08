@@ -81,8 +81,8 @@ def summarize_variable(name, var, is_index=False, dtype=None):
     dtype = dtype or escape(str(var.dtype))
 
     # "unique" ids required to expand/collapse subsections
-    attrs_id = "attrs-" + str(uuid.uuid4())
-    data_id = "data-" + str(uuid.uuid4())
+    attrs_id = f"attrs-{str(uuid.uuid4())}"
+    data_id = f"data-{str(uuid.uuid4())}"
     disabled = "" if len(var.attrs) else "disabled"
 
     preview = escape(inline_variable_array_repr(variable, 35))
@@ -167,7 +167,7 @@ def collapsible_section(
     name, inline_details="", details="", n_items=None, enabled=True, collapsed=False
 ):
     # "unique" id to expand/collapse the section
-    data_id = "section-" + str(uuid.uuid4())
+    data_id = f"section-{str(uuid.uuid4())}"
 
     has_items = n_items is not None and n_items
     n_items_span = "" if n_items is None else f" <span>({n_items})</span>"
@@ -213,7 +213,7 @@ def dim_section(obj):
 
 def array_section(obj):
     # "unique" id to expand/collapse the section
-    data_id = "section-" + str(uuid.uuid4())
+    data_id = f"section-{str(uuid.uuid4())}"
     collapsed = (
         "checked"
         if _get_boolean_with_default("display_expand_data", default=True)
@@ -280,7 +280,7 @@ def _obj_repr(obj, header_components, sections):
     If CSS is not injected (untrusted notebook), fallback to the plain text repr.
 
     """
-    header = f"<div class='xr-header'>{''.join(h for h in header_components)}</div>"
+    header = f"<div class='xr-header'>{''.join(header_components)}</div>"
     sections = "".join(f"<li class='xr-section-item'>{s}</li>" for s in sections)
 
     icons_svg, css_style = _load_static_files()
@@ -298,11 +298,7 @@ def _obj_repr(obj, header_components, sections):
 
 def array_repr(arr):
     dims = OrderedDict((k, v) for k, v in zip(arr.dims, arr.shape))
-    if hasattr(arr, "xindexes"):
-        indexed_dims = arr.xindexes.dims
-    else:
-        indexed_dims = {}
-
+    indexed_dims = arr.xindexes.dims if hasattr(arr, "xindexes") else {}
     obj_type = f"xarray.{type(arr).__name__}"
     arr_name = f"'{arr.name}'" if getattr(arr, "name", None) else ""
 

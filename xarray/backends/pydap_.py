@@ -69,7 +69,7 @@ def _fix_attributes(attributes):
         if k.lower() == "global" or k.lower().endswith("_global"):
             # move global attributes to the top level, like the netcdf-C
             # DAP client
-            attributes.update(attributes.pop(k))
+            attributes |= attributes.pop(k)
         elif is_dict_like(attributes[k]):
             # Make Hierarchical attributes to a single level with a
             # dot-separated key
@@ -125,9 +125,9 @@ class PydapDataStore(AbstractDataStore):
         }
         if Version(pydap.lib.__version__) >= Version("3.3.0"):
             if verify is not None:
-                kwargs.update({"verify": verify})
+                kwargs["verify"] = verify
             if user_charset is not None:
-                kwargs.update({"user_charset": user_charset})
+                kwargs["user_charset"] = user_charset
         ds = pydap.client.open_url(**kwargs)
         return cls(ds)
 
@@ -202,7 +202,7 @@ class PydapBackendEntrypoint(BackendEntrypoint):
 
         store_entrypoint = StoreBackendEntrypoint()
         with close_on_error(store):
-            ds = store_entrypoint.open_dataset(
+            return store_entrypoint.open_dataset(
                 store,
                 mask_and_scale=mask_and_scale,
                 decode_times=decode_times,
@@ -212,7 +212,6 @@ class PydapBackendEntrypoint(BackendEntrypoint):
                 use_cftime=use_cftime,
                 decode_timedelta=decode_timedelta,
             )
-            return ds
 
 
 BACKEND_ENTRYPOINTS["pydap"] = ("pydap", PydapBackendEntrypoint)

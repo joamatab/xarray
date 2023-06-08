@@ -88,9 +88,7 @@ class IndexSelResult:
 
 def merge_sel_results(results: list[IndexSelResult]) -> IndexSelResult:
     all_dims_count = Counter([dim for res in results for dim in res.dim_indexers])
-    duplicate_dims = {k: v for k, v in all_dims_count.items() if v > 1}
-
-    if duplicate_dims:
+    if duplicate_dims := {k: v for k, v in all_dims_count.items() if v > 1}:
         # TODO: this message is not right when combining indexe(s) queries with
         # location-based indexing on a dimension with no dimension-coordinate (failback)
         fmt_dims = [
@@ -112,12 +110,12 @@ def merge_sel_results(results: list[IndexSelResult]) -> IndexSelResult:
     rename_dims = {}
 
     for res in results:
-        dim_indexers.update(res.dim_indexers)
-        indexes.update(res.indexes)
-        variables.update(res.variables)
+        dim_indexers |= res.dim_indexers
+        indexes |= res.indexes
+        variables |= res.variables
         drop_coords += res.drop_coords
         drop_indexes += res.drop_indexes
-        rename_dims.update(res.rename_dims)
+        rename_dims |= res.rename_dims
 
     return IndexSelResult(
         dim_indexers, indexes, variables, drop_coords, drop_indexes, rename_dims
@@ -279,13 +277,13 @@ def _index_indexer_1d(old_indexer, applied_indexer, size):
         # shortcut for the usual case
         return old_indexer
     if isinstance(old_indexer, slice):
-        if isinstance(applied_indexer, slice):
-            indexer = slice_slice(old_indexer, applied_indexer, size)
-        else:
-            indexer = _expand_slice(old_indexer, size)[applied_indexer]
+        return (
+            slice_slice(old_indexer, applied_indexer, size)
+            if isinstance(applied_indexer, slice)
+            else _expand_slice(old_indexer, size)[applied_indexer]
+        )
     else:
-        indexer = old_indexer[applied_indexer]
-    return indexer
+        return old_indexer[applied_indexer]
 
 
 class ExplicitIndexer:
@@ -642,10 +640,7 @@ class LazilyVectorizedIndexedArray(ExplicitlyIndexedNDArrayMixin):
 
 def _wrap_numpy_scalars(array):
     """Wrap NumPy scalars in 0d arrays."""
-    if np.isscalar(array):
-        return np.array(array)
-    else:
-        return array
+    return np.array(array) if np.isscalar(array) else array
 
 
 class CopyOnWriteArray(ExplicitlyIndexedNDArrayMixin):
@@ -892,12 +887,11 @@ def _decompose_slice(key: slice, size: int) -> tuple[slice, slice]:
     if step > 0:
         # If key already has a positive step, use it as is in the backend
         return key, slice(None)
-    else:
-        # determine stop precisely for step > 1 case
-        # Use the range object to do the calculation
-        # e.g. [98:2:-2] -> [98:3:-2]
-        exact_stop = range(start, stop, step)[-1]
-        return slice(exact_stop, start + 1, -step), slice(None, None, -1)
+    # determine stop precisely for step > 1 case
+    # Use the range object to do the calculation
+    # e.g. [98:2:-2] -> [98:3:-2]
+    exact_stop = range(start, stop, step)[-1]
+    return slice(exact_stop, start + 1, -step), slice(None, None, -1)
 
 
 def _decompose_vectorized_indexer(
@@ -1062,7 +1056,7 @@ def _decompose_outer_indexer(
             else 0
             for k in indexer_elems
         ]
-        array_index = np.argmax(np.array(gains)) if len(gains) > 0 else None
+        array_index = np.argmax(np.array(gains)) if gains else None
 
         for i, (k, s) in enumerate(zip(indexer_elems, shape)):
             if isinstance(k, np.ndarray) and i != array_index:
@@ -1126,11 +1120,11 @@ def _decompose_outer_indexer(
 def _arrayize_vectorized_indexer(indexer, shape):
     """Return an identical vindex but slices are replaced by arrays"""
     slices = [v for v in indexer.tuple if isinstance(v, slice)]
-    if len(slices) == 0:
+    if not slices:
         return indexer
 
     arrays = [v for v in indexer.tuple if isinstance(v, np.ndarray)]
-    n_dim = arrays[0].ndim if len(arrays) > 0 else 0
+    n_dim = arrays[0].ndim if arrays else 0
     i_dim = 0
     new_key = []
     for v, size in zip(indexer.tuple, shape):
@@ -1148,9 +1142,9 @@ def _chunked_array_with_chunks_hint(array, chunks, chunkmanager):
 
     if len(chunks) < array.ndim:
         raise ValueError("not enough chunks in hint")
-    new_chunks = []
-    for chunk, size in zip(chunks, array.shape):
-        new_chunks.append(chunk if size > 1 else (1,))
+    new_chunks = [
+        chunk if size > 1 else (1,) for chunk, size in zip(chunks, array.shape)
+    ]
     return chunkmanager.from_array(array, new_chunks)
 
 
@@ -1164,23 +1158,22 @@ def _masked_result_drop_slice(key, data=None):
 
     new_keys = []
     for k in key:
-        if isinstance(k, np.ndarray):
-            if is_chunked_array(data):
-                chunkmanager = get_chunked_array_type(data)
-                new_keys.append(
-                    _chunked_array_with_chunks_hint(k, chunks_hint, chunkmanager)
-                )
-            elif isinstance(data, array_type("sparse")):
-                import sparse
+        if isinstance(k, np.ndarray) and is_chunked_array(data):
+            chunkmanager = get_chunked_array_type(data)
+            new_keys.append(
+                _chunked_array_with_chunks_hint(k, chunks_hint, chunkmanager)
+            )
+        elif (
+            isinstance(k, np.ndarray)
+            and not is_chunked_array(data)
+            and isinstance(data, array_type("sparse"))
+        ):
+            import sparse
 
-                new_keys.append(sparse.COO.from_numpy(k))
-            else:
-                new_keys.append(k)
+            new_keys.append(sparse.COO.from_numpy(k))
         else:
             new_keys.append(k)
-
-    mask = _logical_any(k == -1 for k in new_keys)
-    return mask
+    return _logical_any(k == -1 for k in new_keys)
 
 
 def create_mask(indexer, shape, data=None):
@@ -1302,8 +1295,7 @@ class NumpyIndexingAdapter(ExplicitlyIndexedNDArrayMixin):
         # In NumpyIndexingAdapter we only allow to store bare np.ndarray
         if not isinstance(array, np.ndarray):
             raise TypeError(
-                "NumpyIndexingAdapter only wraps np.ndarray. "
-                "Trying to wrap {}".format(type(array))
+                f"NumpyIndexingAdapter only wraps np.ndarray. Trying to wrap {type(array)}"
             )
         self.array = array
 
@@ -1391,11 +1383,10 @@ class ArrayApiIndexingAdapter(ExplicitlyIndexedNDArrayMixin):
     def __setitem__(self, key, value):
         if isinstance(key, (BasicIndexer, OuterIndexer)):
             self.array[key.tuple] = value
+        elif isinstance(key, VectorizedIndexer):
+            raise TypeError("Vectorized indexing is not supported")
         else:
-            if isinstance(key, VectorizedIndexer):
-                raise TypeError("Vectorized indexing is not supported")
-            else:
-                raise TypeError(f"Unrecognized indexer: {key}")
+            raise TypeError(f"Unrecognized indexer: {key}")
 
     def transpose(self, order):
         xp = self.array.__array_namespace__()
@@ -1612,11 +1603,10 @@ class PandasMultiIndexingAdapter(PandasIndexingAdapter):
     def __repr__(self) -> str:
         if self.level is None:
             return super().__repr__()
-        else:
-            props = (
-                f"(array={self.array!r}, level={self.level!r}, dtype={self.dtype!r})"
-            )
-            return f"{type(self).__name__}{props}"
+        props = (
+            f"(array={self.array!r}, level={self.level!r}, dtype={self.dtype!r})"
+        )
+        return f"{type(self).__name__}{props}"
 
     def _get_array_subset(self) -> np.ndarray:
         # used to speed-up the repr for big multi-indexes

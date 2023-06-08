@@ -43,19 +43,6 @@ if TYPE_CHECKING:
     except ImportError:
         ZarrArray = np.ndarray
 
-    # TODO: Turn on when https://github.com/python/mypy/issues/11871 is fixed.
-    # Can be uncommented if using pyright though.
-    # import sys
-
-    # try:
-    #     if sys.version_info >= (3, 11):
-    #         from typing import Self
-    #     else:
-    #         from typing_extensions import Self
-    # except ImportError:
-    #     Self: Any = None
-    Self: Any = None
-
     # Anything that can be coerced to a shape tuple
     _ShapeLike = Union[SupportsIndex, Sequence[SupportsIndex]]
     _DTypeLikeNested = Any  # TODO: wait for support for recursive types
@@ -89,9 +76,21 @@ if TYPE_CHECKING:
         CFTimeDatetime = Any
     DatetimeLike = Union[pd.Timestamp, datetime.datetime, np.datetime64, CFTimeDatetime]
 else:
-    Self: Any = None
     DTypeLikeSave: Any = None
 
+
+# TODO: Turn on when https://github.com/python/mypy/issues/11871 is fixed.
+# Can be uncommented if using pyright though.
+# import sys
+
+# try:
+#     if sys.version_info >= (3, 11):
+#         from typing import Self
+#     else:
+#         from typing_extensions import Self
+# except ImportError:
+#     Self: Any = None
+Self: Any = None
 
 T_Backend = TypeVar("T_Backend", bound="BackendEntrypoint")
 T_Dataset = TypeVar("T_Dataset", bound="Dataset")

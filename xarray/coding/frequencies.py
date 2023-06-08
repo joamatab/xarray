@@ -132,9 +132,7 @@ class _CFTimeFrequencyInferer:  # (pd.tseries.frequencies._FrequencyInferer):
         delta = self.deltas[0]  # Smallest delta
         if _is_multiple(delta, _ONE_DAY):
             return self._infer_daily_rule()
-        # There is no possible intraday frequency with a non-unique delta
-        # Different from pandas: we don't need to manage DST and business offsets in cftime
-        elif not len(self.deltas) == 1:
+        elif len(self.deltas) != 1:
             return None
 
         if _is_multiple(delta, _ONE_HOUR):
@@ -149,23 +147,20 @@ class _CFTimeFrequencyInferer:  # (pd.tseries.frequencies._FrequencyInferer):
             return _maybe_add_count("U", delta / _ONE_MICRO)
 
     def _infer_daily_rule(self):
-        annual_rule = self._get_annual_rule()
-        if annual_rule:
+        if annual_rule := self._get_annual_rule():
             nyears = self.year_deltas[0]
             month = _MONTH_ABBREVIATIONS[self.index[0].month]
             alias = f"{annual_rule}-{month}"
             return _maybe_add_count(alias, nyears)
 
-        quartely_rule = self._get_quartely_rule()
-        if quartely_rule:
+        if quartely_rule := self._get_quartely_rule():
             nquarters = self.month_deltas[0] / 3
             mod_dict = {0: 12, 2: 11, 1: 10}
             month = _MONTH_ABBREVIATIONS[mod_dict[self.index[0].month % 3]]
             alias = f"{quartely_rule}-{month}"
             return _maybe_add_count(alias, nquarters)
 
-        monthly_rule = self._get_monthly_rule()
-        if monthly_rule:
+        if monthly_rule := self._get_monthly_rule():
             return _maybe_add_count(monthly_rule, self.month_deltas[0])
 
         if len(self.deltas) == 1:
@@ -234,12 +229,11 @@ def _is_multiple(us, mult: int):
 
 def _maybe_add_count(base: str, count: float):
     """If count is greater than 1, add it to the base offset string"""
-    if count != 1:
-        assert count == int(count)
-        count = int(count)
-        return f"{count}{base}"
-    else:
+    if count == 1:
         return base
+    assert count == int(count)
+    count = int(count)
+    return f"{count}{base}"
 
 
 def month_anchor_check(dates):

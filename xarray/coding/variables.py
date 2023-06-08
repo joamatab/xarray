@@ -159,12 +159,11 @@ def lazy_elemwise_func(array, func: Callable, dtype: np.typing.DTypeLike):
     -------
     Either a dask.array.Array or _ElementwiseFunctionArray.
     """
-    if is_chunked_array(array):
-        chunkmanager = get_chunked_array_type(array)
-
-        return chunkmanager.map_blocks(func, array, dtype=dtype)
-    else:
+    if not is_chunked_array(array):
         return _ElementwiseFunctionArray(array, func, dtype)
+    chunkmanager = get_chunked_array_type(array)
+
+    return chunkmanager.map_blocks(func, array, dtype=dtype)
 
 
 def unpack_for_encoding(var: Variable) -> T_VarTuple:
@@ -179,10 +178,7 @@ def safe_setitem(dest, key: Hashable, value, name: T_Name = None):
     if key in dest:
         var_str = f" on variable {name!r}" if name else ""
         raise ValueError(
-            "failed to prevent overwriting existing key {} in attrs{}. "
-            "This is probably an encoding field used by xarray to describe "
-            "how a variable is serialized. To proceed, remove this key from "
-            "the variable's attributes manually.".format(key, var_str)
+            f"failed to prevent overwriting existing key {key} in attrs{var_str}. This is probably an encoding field used by xarray to describe how a variable is serialized. To proceed, remove this key from the variable's attributes manually."
         )
     dest[key] = value
 
@@ -255,40 +251,40 @@ class CFMaskCoder(VariableCoder):
     def decode(self, variable: Variable, name: T_Name = None):
         dims, data, attrs, encoding = unpack_for_decoding(variable)
 
-        raw_fill_values = [
-            pop_to(attrs, encoding, attr, name=name)
-            for attr in ("missing_value", "_FillValue")
-        ]
-        if raw_fill_values:
-            encoded_fill_values = {
-                fv
-                for option in raw_fill_values
-                for fv in np.ravel(option)
-                if not pd.isnull(fv)
-            }
-
-            if len(encoded_fill_values) > 1:
-                warnings.warn(
-                    "variable {!r} has multiple fill values {}, "
-                    "decoding all values to NaN.".format(name, encoded_fill_values),
-                    SerializationWarning,
-                    stacklevel=3,
-                )
-
-            dtype, decoded_fill_value = dtypes.maybe_promote(data.dtype)
-
-            if encoded_fill_values:
-                transform = partial(
-                    _apply_mask,
-                    encoded_fill_values=encoded_fill_values,
-                    decoded_fill_value=decoded_fill_value,
-                    dtype=dtype,
-                )
-                data = lazy_elemwise_func(data, transform, dtype)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if not (
+            raw_fill_values := [
+                pop_to(attrs, encoding, attr, name=name)
+                for attr in ("missing_value", "_FillValue")
+            ]
+        ):
             return variable
+        encoded_fill_values = {
+            fv
+            for option in raw_fill_values
+            for fv in np.ravel(option)
+            if not pd.isnull(fv)
+        }
+
+        if len(encoded_fill_values) > 1:
+            warnings.warn(
+                "variable {!r} has multiple fill values {}, "
+                "decoding all values to NaN.".format(name, encoded_fill_values),
+                SerializationWarning,
+                stacklevel=3,
+            )
+
+        dtype, decoded_fill_value = dtypes.maybe_promote(data.dtype)
+
+        if encoded_fill_values:
+            transform = partial(
+                _apply_mask,
+                encoded_fill_values=encoded_fill_values,
+                decoded_fill_value=decoded_fill_value,
+                dtype=dtype,
+            )
+            data = lazy_elemwise_func(data, transform, dtype)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
 
 def _scale_offset_decoding(data, scale_factor, add_offset, dtype: np.typing.DTypeLike):
@@ -341,27 +337,26 @@ class CFScaleOffsetCoder(VariableCoder):
 
     def decode(self, variable: Variable, name: T_Name = None) -> Variable:
         _attrs = variable.attrs
-        if "scale_factor" in _attrs or "add_offset" in _attrs:
-            dims, data, attrs, encoding = unpack_for_decoding(variable)
-
-            scale_factor = pop_to(attrs, encoding, "scale_factor", name=name)
-            add_offset = pop_to(attrs, encoding, "add_offset", name=name)
-            dtype = _choose_float_dtype(data.dtype, "add_offset" in encoding)
-            if np.ndim(scale_factor) > 0:
-                scale_factor = np.asarray(scale_factor).item()
-            if np.ndim(add_offset) > 0:
-                add_offset = np.asarray(add_offset).item()
-            transform = partial(
-                _scale_offset_decoding,
-                scale_factor=scale_factor,
-                add_offset=add_offset,
-                dtype=dtype,
-            )
-            data = lazy_elemwise_func(data, transform, dtype)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if "scale_factor" not in _attrs and "add_offset" not in _attrs:
             return variable
+        dims, data, attrs, encoding = unpack_for_decoding(variable)
+
+        scale_factor = pop_to(attrs, encoding, "scale_factor", name=name)
+        add_offset = pop_to(attrs, encoding, "add_offset", name=name)
+        dtype = _choose_float_dtype(data.dtype, "add_offset" in encoding)
+        if np.ndim(scale_factor) > 0:
+            scale_factor = np.asarray(scale_factor).item()
+        if np.ndim(add_offset) > 0:
+            add_offset = np.asarray(add_offset).item()
+        transform = partial(
+            _scale_offset_decoding,
+            scale_factor=scale_factor,
+            add_offset=add_offset,
+            dtype=dtype,
+        )
+        data = lazy_elemwise_func(data, transform, dtype)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
 
 class UnsignedIntegerCoder(VariableCoder):
@@ -370,53 +365,51 @@ class UnsignedIntegerCoder(VariableCoder):
         # https://www.unidata.ucar.edu/software/netcdf/docs/BestPractices.html
         #     "_Unsigned = "true" to indicate that
         #      integer data should be treated as unsigned"
-        if variable.encoding.get("_Unsigned", "false") == "true":
-            dims, data, attrs, encoding = unpack_for_encoding(variable)
-
-            pop_to(encoding, attrs, "_Unsigned")
-            signed_dtype = np.dtype(f"i{data.dtype.itemsize}")
-            if "_FillValue" in attrs:
-                new_fill = signed_dtype.type(attrs["_FillValue"])
-                attrs["_FillValue"] = new_fill
-            data = duck_array_ops.astype(duck_array_ops.around(data), signed_dtype)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if variable.encoding.get("_Unsigned", "false") != "true":
             return variable
+        dims, data, attrs, encoding = unpack_for_encoding(variable)
+
+        pop_to(encoding, attrs, "_Unsigned")
+        signed_dtype = np.dtype(f"i{data.dtype.itemsize}")
+        if "_FillValue" in attrs:
+            new_fill = signed_dtype.type(attrs["_FillValue"])
+            attrs["_FillValue"] = new_fill
+        data = duck_array_ops.astype(duck_array_ops.around(data), signed_dtype)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
     def decode(self, variable: Variable, name: T_Name = None) -> Variable:
-        if "_Unsigned" in variable.attrs:
-            dims, data, attrs, encoding = unpack_for_decoding(variable)
-
-            unsigned = pop_to(attrs, encoding, "_Unsigned")
-
-            if data.dtype.kind == "i":
-                if unsigned == "true":
-                    unsigned_dtype = np.dtype(f"u{data.dtype.itemsize}")
-                    transform = partial(np.asarray, dtype=unsigned_dtype)
-                    data = lazy_elemwise_func(data, transform, unsigned_dtype)
-                    if "_FillValue" in attrs:
-                        new_fill = unsigned_dtype.type(attrs["_FillValue"])
-                        attrs["_FillValue"] = new_fill
-            elif data.dtype.kind == "u":
-                if unsigned == "false":
-                    signed_dtype = np.dtype(f"i{data.dtype.itemsize}")
-                    transform = partial(np.asarray, dtype=signed_dtype)
-                    data = lazy_elemwise_func(data, transform, signed_dtype)
-                    if "_FillValue" in attrs:
-                        new_fill = signed_dtype.type(attrs["_FillValue"])
-                        attrs["_FillValue"] = new_fill
-            else:
-                warnings.warn(
-                    f"variable {name!r} has _Unsigned attribute but is not "
-                    "of integer type. Ignoring attribute.",
-                    SerializationWarning,
-                    stacklevel=3,
-                )
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if "_Unsigned" not in variable.attrs:
             return variable
+        dims, data, attrs, encoding = unpack_for_decoding(variable)
+
+        unsigned = pop_to(attrs, encoding, "_Unsigned")
+
+        if data.dtype.kind == "i":
+            if unsigned == "true":
+                unsigned_dtype = np.dtype(f"u{data.dtype.itemsize}")
+                transform = partial(np.asarray, dtype=unsigned_dtype)
+                data = lazy_elemwise_func(data, transform, unsigned_dtype)
+                if "_FillValue" in attrs:
+                    new_fill = unsigned_dtype.type(attrs["_FillValue"])
+                    attrs["_FillValue"] = new_fill
+        elif data.dtype.kind == "u":
+            if unsigned == "false":
+                signed_dtype = np.dtype(f"i{data.dtype.itemsize}")
+                transform = partial(np.asarray, dtype=signed_dtype)
+                data = lazy_elemwise_func(data, transform, signed_dtype)
+                if "_FillValue" in attrs:
+                    new_fill = signed_dtype.type(attrs["_FillValue"])
+                    attrs["_FillValue"] = new_fill
+        else:
+            warnings.warn(
+                f"variable {name!r} has _Unsigned attribute but is not "
+                "of integer type. Ignoring attribute.",
+                SerializationWarning,
+                stacklevel=3,
+            )
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
 
 class DefaultFillvalueCoder(VariableCoder):
@@ -444,28 +437,26 @@ class BooleanCoder(VariableCoder):
 
     def encode(self, variable: Variable, name: T_Name = None) -> Variable:
         if (
-            (variable.dtype == bool)
-            and ("dtype" not in variable.encoding)
-            and ("dtype" not in variable.attrs)
+            variable.dtype != bool
+            or "dtype" in variable.encoding
+            or "dtype" in variable.attrs
         ):
-            dims, data, attrs, encoding = unpack_for_encoding(variable)
-            attrs["dtype"] = "bool"
-            data = duck_array_ops.astype(data, dtype="i1", copy=True)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
             return variable
+        dims, data, attrs, encoding = unpack_for_encoding(variable)
+        attrs["dtype"] = "bool"
+        data = duck_array_ops.astype(data, dtype="i1", copy=True)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
     def decode(self, variable: Variable, name: T_Name = None) -> Variable:
-        if variable.attrs.get("dtype", False) == "bool":
-            dims, data, attrs, encoding = unpack_for_decoding(variable)
-            # overwrite (!) dtype in encoding, and remove from attrs
-            # needed for correct subsequent encoding
-            encoding["dtype"] = attrs.pop("dtype")
-            data = BoolTypeArray(data)
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if variable.attrs.get("dtype", False) != "bool":
             return variable
+        dims, data, attrs, encoding = unpack_for_decoding(variable)
+        # overwrite (!) dtype in encoding, and remove from attrs
+        # needed for correct subsequent encoding
+        encoding["dtype"] = attrs.pop("dtype")
+        data = BoolTypeArray(data)
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
 
 class EndianCoder(VariableCoder):
@@ -487,31 +478,30 @@ class NonStringCoder(VariableCoder):
     """Encode NonString variables if dtypes differ."""
 
     def encode(self, variable: Variable, name: T_Name = None) -> Variable:
-        if "dtype" in variable.encoding and variable.encoding["dtype"] not in (
+        if "dtype" not in variable.encoding or variable.encoding["dtype"] in (
             "S1",
             str,
         ):
-            dims, data, attrs, encoding = unpack_for_encoding(variable)
-            dtype = np.dtype(encoding.pop("dtype"))
-            if dtype != variable.dtype:
-                if np.issubdtype(dtype, np.integer):
-                    if (
-                        np.issubdtype(variable.dtype, np.floating)
-                        and "_FillValue" not in variable.attrs
-                        and "missing_value" not in variable.attrs
-                    ):
-                        warnings.warn(
-                            f"saving variable {name} with floating "
-                            "point data as an integer dtype without "
-                            "any _FillValue to use for NaNs",
-                            SerializationWarning,
-                            stacklevel=10,
-                        )
-                    data = np.around(data)
-                data = data.astype(dtype=dtype)
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
             return variable
+        dims, data, attrs, encoding = unpack_for_encoding(variable)
+        dtype = np.dtype(encoding.pop("dtype"))
+        if dtype != variable.dtype:
+            if np.issubdtype(dtype, np.integer):
+                if (
+                    np.issubdtype(variable.dtype, np.floating)
+                    and "_FillValue" not in variable.attrs
+                    and "missing_value" not in variable.attrs
+                ):
+                    warnings.warn(
+                        f"saving variable {name} with floating "
+                        "point data as an integer dtype without "
+                        "any _FillValue to use for NaNs",
+                        SerializationWarning,
+                        stacklevel=10,
+                    )
+                data = np.around(data)
+            data = data.astype(dtype=dtype)
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
     def decode(self):
         raise NotImplementedError()

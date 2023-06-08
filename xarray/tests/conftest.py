@@ -45,10 +45,7 @@ def ds(request, backend):
     else:
         raise ValueError
 
-    if backend == "dask":
-        return ds.chunk()
-
-    return ds
+    return ds.chunk() if backend == "dask" else ds
 
 
 @pytest.fixture(params=[1])

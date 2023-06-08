@@ -518,8 +518,7 @@ class TestNestedCombine:
         partway3 = concat([ds(2), ds(5)], dim="dim1")
         expected = concat([partway1, partway2, partway3], dim="dim2")
 
-        expected_dict = {}
-        expected_dict["drop"] = expected.copy(deep=True)
+        expected_dict = {"drop": expected.copy(deep=True)}
         expected_dict["drop"].attrs = {}
         expected_dict["no_conflicts"] = expected.copy(deep=True)
         expected_dict["no_conflicts"].attrs = {

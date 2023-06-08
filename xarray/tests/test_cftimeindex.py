@@ -184,10 +184,7 @@ def feb_days(date_type):
 def dec_days(date_type):
     import cftime
 
-    if date_type is cftime.Datetime360Day:
-        return 30
-    else:
-        return 31
+    return 30 if date_type is cftime.Datetime360Day else 31
 
 
 @pytest.fixture

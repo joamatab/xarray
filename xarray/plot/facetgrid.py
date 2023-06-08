@@ -52,7 +52,7 @@ def _nicetitle(coord, value, maxchar, template):
     title = template.format(coord=coord, value=prettyvalue)
 
     if len(title) > maxchar:
-        title = title[: (maxchar - 3)] + "..."
+        title = f"{title[:maxchar - 3]}..."
 
     return title
 
@@ -186,9 +186,9 @@ class FacetGrid(Generic[T_Xarray]):
             nfacet = nrow * ncol
             if col_wrap is not None:
                 warnings.warn("Ignoring col_wrap since both col and row were passed")
-        elif row and not col:
+        elif row:
             single_group = row
-        elif not row and col:
+        elif col:
             single_group = col
         else:
             raise ValueError("Pass a coordinate name as an argument for row or col")
@@ -234,7 +234,7 @@ class FacetGrid(Generic[T_Xarray]):
                 {single_group: x} for x in data[single_group].to_numpy()
             ]
             empty: list[dict[Hashable, Any] | None] = [
-                None for x in range(nrow * ncol - len(full))
+                None for _ in range(nrow * ncol - len(full))
             ]
             name_dict_list = full + empty
         else:
@@ -349,7 +349,7 @@ class FacetGrid(Generic[T_Xarray]):
             for k, v in kwargs.items()
             if k not in {"cmap", "colors", "cbar_kwargs", "levels"}
         }
-        func_kwargs.update(cmap_params)
+        func_kwargs |= cmap_params
         func_kwargs["add_colorbar"] = False
         if func.__name__ != "surface":
             func_kwargs["add_labels"] = False
@@ -471,7 +471,7 @@ class FacetGrid(Generic[T_Xarray]):
             for k, v in kwargs.items()
             if k not in {"cmap", "colors", "cbar_kwargs", "levels"}
         }
-        func_kwargs.update(cmap_params)
+        func_kwargs |= cmap_params
         # Annotations will be handled later, skip those parts in the plotfunc:
         func_kwargs["add_colorbar"] = False
         func_kwargs["add_legend"] = False
@@ -494,7 +494,7 @@ class FacetGrid(Generic[T_Xarray]):
                 {self._single_group: x}
                 for x in range(0, self.data[self._single_group].size)
             )
-            empty = tuple(None for x in range(self._nrow * self._ncol - len(full)))
+            empty = tuple(None for _ in range(self._nrow * self._ncol - len(full)))
             name_d = full + empty
         else:
             rowcols = itertools.product(
@@ -538,8 +538,7 @@ class FacetGrid(Generic[T_Xarray]):
         )
 
         if add_legend:
-            use_legend_elements = False if func.__name__ == "hist" else True
-            if use_legend_elements:
+            if use_legend_elements := func.__name__ != "hist":
                 self.add_legend(
                     use_legend_elements=use_legend_elements,
                     hueplt_norm=hueplt_norm if not add_colorbar else _Normalize(None),
@@ -778,10 +777,7 @@ class FacetGrid(Generic[T_Xarray]):
             # Find the plot with the largest xlim values:
             lower, upper = lims_largest[axis]
             for ax in self.axs.flat:
-                get_lim: None | Callable[[], tuple[float, float]] = getattr(
-                    ax, f"get_{axis}lim", None
-                )
-                if get_lim:
+                if get_lim := getattr(ax, f"get_{axis}lim", None):
                     lower_new, upper_new = get_lim()
                     lower, upper = (min(lower, lower_new), max(upper, upper_new))
             lims_largest[axis] = (lower, upper)
@@ -821,8 +817,7 @@ class FacetGrid(Generic[T_Xarray]):
             for (axis, data_limit), parameter_limit in zip(
                 lims_largest.items(), (x, y, z)
             ):
-                set_lim = getattr(ax, f"set_{axis}lim", None)
-                if set_lim:
+                if set_lim := getattr(ax, f"set_{axis}lim", None):
                     set_lim(data_limit if parameter_limit is None else parameter_limit)
 
     def set_axis_labels(self, *axlabels: Hashable) -> None:

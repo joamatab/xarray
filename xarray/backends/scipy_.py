@@ -40,9 +40,7 @@ if TYPE_CHECKING:
 
 
 def _decode_string(s):
-    if isinstance(s, bytes):
-        return s.decode("utf-8", "replace")
-    return s
+    return s.decode("utf-8", "replace") if isinstance(s, bytes) else s
 
 
 def _decode_attrs(d):
@@ -109,17 +107,16 @@ def _open_scipy_netcdf(filename, mode, mmap, version):
         return scipy.io.netcdf_file(filename, mode=mode, mmap=mmap, version=version)
     except TypeError as e:  # netcdf3 message is obscure in this case
         errmsg = e.args[0]
-        if "is not a valid NetCDF 3 file" in errmsg:
-            msg = """
+        if "is not a valid NetCDF 3 file" not in errmsg:
+            raise
+        msg = """
             If this is a NetCDF4 file, you may need to install the
             netcdf4 library, e.g.,
 
             $ pip install netcdf4
             """
-            errmsg += msg
-            raise TypeError(errmsg)
-        else:
-            raise
+        errmsg += msg
+        raise TypeError(errmsg)
 
 
 class ScipyDataStore(WritableCFDataStore):

@@ -114,8 +114,6 @@ def unique_variable(
     if len(variables) == 1 or compat == "override":
         return out
 
-    combine_method = None
-
     if compat == "minimal":
         compat = "broadcast_equals"
 
@@ -123,9 +121,7 @@ def unique_variable(
         dim_lengths = broadcast_dimension_size(variables)
         out = out.set_dims(dim_lengths)
 
-    if compat == "no_conflicts":
-        combine_method = "fillna"
-
+    combine_method = "fillna" if compat == "no_conflicts" else None
     if equals is None:
         # first check without comparing values i.e. no computes
         for var in variables[1:]:
@@ -133,13 +129,13 @@ def unique_variable(
             if equals is not True:
                 break
 
-        if equals is None:
-            # now compare values with minimum number of computes
-            out = out.compute()
-            for var in variables[1:]:
-                equals = getattr(out, compat)(var)
-                if not equals:
-                    break
+    if equals is None:
+        # now compare values with minimum number of computes
+        out = out.compute()
+        for var in variables[1:]:
+            equals = getattr(out, compat)(var)
+            if not equals:
+                break
 
     if not equals:
         raise MergeError(
@@ -252,55 +248,53 @@ def merge_collected(
             merged_vars[name] = variable
             if index is not None:
                 merged_indexes[name] = index
-        else:
-            indexed_elements = [
-                (variable, index)
-                for variable, index in elements_list
-                if index is not None
-            ]
-            if indexed_elements:
-                # TODO(shoyer): consider adjusting this logic. Are we really
-                # OK throwing away variable without an index in favor of
-                # indexed variables, without even checking if values match?
-                variable, index = indexed_elements[0]
-                for other_var, other_index in indexed_elements[1:]:
-                    if not indexes_equal(
-                        index, other_index, variable, other_var, index_cmp_cache
-                    ):
+        elif indexed_elements := [
+            (variable, index)
+            for variable, index in elements_list
+            if index is not None
+        ]:
+            # TODO(shoyer): consider adjusting this logic. Are we really
+            # OK throwing away variable without an index in favor of
+            # indexed variables, without even checking if values match?
+            variable, index = indexed_elements[0]
+            for other_var, other_index in indexed_elements[1:]:
+                if not indexes_equal(
+                    index, other_index, variable, other_var, index_cmp_cache
+                ):
+                    raise MergeError(
+                        f"conflicting values/indexes on objects to be combined fo coordinate {name!r}\n"
+                        f"first index: {index!r}\nsecond index: {other_index!r}\n"
+                        f"first variable: {variable!r}\nsecond variable: {other_var!r}\n"
+                    )
+            if compat == "identical":
+                for other_variable, _ in indexed_elements[1:]:
+                    if not dict_equiv(variable.attrs, other_variable.attrs):
                         raise MergeError(
-                            f"conflicting values/indexes on objects to be combined fo coordinate {name!r}\n"
-                            f"first index: {index!r}\nsecond index: {other_index!r}\n"
-                            f"first variable: {variable!r}\nsecond variable: {other_var!r}\n"
+                            "conflicting attribute values on combined "
+                            f"variable {name!r}:\nfirst value: {variable.attrs!r}\nsecond value: {other_variable.attrs!r}"
                         )
-                if compat == "identical":
-                    for other_variable, _ in indexed_elements[1:]:
-                        if not dict_equiv(variable.attrs, other_variable.attrs):
-                            raise MergeError(
-                                "conflicting attribute values on combined "
-                                f"variable {name!r}:\nfirst value: {variable.attrs!r}\nsecond value: {other_variable.attrs!r}"
-                            )
-                merged_vars[name] = variable
-                merged_vars[name].attrs = merge_attrs(
-                    [var.attrs for var, _ in indexed_elements],
-                    combine_attrs=combine_attrs,
+            merged_vars[name] = variable
+            merged_vars[name].attrs = merge_attrs(
+                [var.attrs for var, _ in indexed_elements],
+                combine_attrs=combine_attrs,
+            )
+            merged_indexes[name] = index
+        else:
+            variables = [variable for variable, _ in elements_list]
+            try:
+                merged_vars[name] = unique_variable(
+                    name, variables, compat, equals.get(name, None)
                 )
-                merged_indexes[name] = index
-            else:
-                variables = [variable for variable, _ in elements_list]
-                try:
-                    merged_vars[name] = unique_variable(
-                        name, variables, compat, equals.get(name, None)
-                    )
-                except MergeError:
-                    if compat != "minimal":
-                        # we need more than "minimal" compatibility (for which
-                        # we drop conflicting coordinates)
-                        raise
+            except MergeError:
+                if compat != "minimal":
+                    # we need more than "minimal" compatibility (for which
+                    # we drop conflicting coordinates)
+                    raise
 
-                if name in merged_vars:
-                    merged_vars[name].attrs = merge_attrs(
-                        [var.attrs for var in variables], combine_attrs=combine_attrs
-                    )
+            if name in merged_vars:
+                merged_vars[name].attrs = merge_attrs(
+                    [var.attrs for var in variables], combine_attrs=combine_attrs
+                )
 
     return merged_vars, merged_indexes
 
@@ -394,12 +388,11 @@ def merge_coordinates_without_align(
     if exclude_dims:
         filtered: dict[Hashable, list[MergeElement]] = {}
         for name, elements in collected.items():
-            new_elements = [
+            if new_elements := [
                 (variable, index)
                 for variable, index in elements
                 if exclude_dims.isdisjoint(variable.dims)
-            ]
-            if new_elements:
+            ]:
                 filtered[name] = new_elements
     else:
         filtered = collected
@@ -525,9 +518,10 @@ def _get_priority_vars_and_indexes(
 
     collected = collect_variables_and_indexes([objects[priority_arg]])
     variables, indexes = merge_collected(collected, compat=compat)
-    grouped: dict[Hashable, MergeElement] = {}
-    for name, variable in variables.items():
-        grouped[name] = (variable, indexes.get(name))
+    grouped: dict[Hashable, MergeElement] = {
+        name: (variable, indexes.get(name))
+        for name, variable in variables.items()
+    }
     return grouped
 
 
@@ -584,7 +578,7 @@ def _create_indexes_from_coords(
     """
     all_variables = dict(coords)
     if data_vars is not None:
-        all_variables.update(data_vars)
+        all_variables |= data_vars
 
     indexes = {}
     updated_coords = {}
@@ -603,8 +597,8 @@ def _create_indexes_from_coords(
 
         if variable.dims == (name,):
             idx, idx_vars = create_default_index_implicit(variable, all_variables)
-            indexes.update({k: idx for k in idx_vars})
-            updated_coords.update(idx_vars)
+            indexes |= {k: idx for k in idx_vars}
+            updated_coords |= idx_vars
             all_variables.update(idx_vars)
         else:
             updated_coords[name] = obj
@@ -677,8 +671,7 @@ def merge_attrs(variable_attrs, combine_attrs, context=None):
         for attrs in variable_attrs[1:]:
             if not dict_equiv(result, attrs):
                 raise MergeError(
-                    f"combine_attrs='identical', but attrs differ. First is {str(result)} "
-                    f", other is {str(attrs)}."
+                    f"combine_attrs='identical', but attrs differ. First is {result} , other is {str(attrs)}."
                 )
         return result
     else:
@@ -767,8 +760,7 @@ def merge_core(
     for dim, size in dims.items():
         if dim in variables:
             coord_names.add(dim)
-    ambiguous_coords = coord_names.intersection(noncoord_names)
-    if ambiguous_coords:
+    if ambiguous_coords := coord_names.intersection(noncoord_names):
         raise MergeError(
             "unable to determine if these variables should be "
             f"coordinates or not in the merged result: {ambiguous_coords}"
@@ -1092,13 +1084,11 @@ def dataset_update_method(dataset: Dataset, other: CoercibleMapping) -> _MergeRe
         other = dict(other)
         for key, value in other.items():
             if isinstance(value, DataArray):
-                # drop conflicting coordinates
-                coord_names = [
+                if coord_names := [
                     c
                     for c in value.coords
                     if c not in value.dims and c in dataset.coords
-                ]
-                if coord_names:
+                ]:
                     other[key] = value.drop_vars(coord_names)
 
     return merge_core(

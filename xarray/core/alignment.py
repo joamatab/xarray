@@ -183,11 +183,7 @@ class Aligner(Generic[DataAlignable]):
         such that we can group matching indexes based on the dictionary keys.
 
         """
-        if isinstance(indexes, Indexes):
-            xr_variables = dict(indexes.variables)
-        else:
-            xr_variables = {}
-
+        xr_variables = dict(indexes.variables) if isinstance(indexes, Indexes) else {}
         xr_indexes: dict[Hashable, Index] = {}
         for k, idx in indexes.items():
             if not isinstance(idx, Index):
@@ -203,7 +199,7 @@ class Aligner(Generic[DataAlignable]):
                     idx = PandasMultiIndex(pd_idx, k)
                 else:
                     idx = PandasIndex(pd_idx, k, coord_dtype=data.dtype)
-                xr_variables.update(idx.create_variables())
+                xr_variables |= idx.create_variables()
             xr_indexes[k] = idx
 
         normalized_indexes = {}
@@ -306,8 +302,7 @@ class Aligner(Generic[DataAlignable]):
                 dim_count[dim] += 1
 
         for count, msg in [(coord_count, "coordinates"), (dim_count, "dimensions")]:
-            dup = {k: v for k, v in count.items() if v > 1}
-            if dup:
+            if dup := {k: v for k, v in count.items() if v > 1}:
                 items_msg = ", ".join(
                     f"{k!r} ({v} conflicting indexes)" for k, v in dup.items()
                 )
@@ -350,7 +345,7 @@ class Aligner(Generic[DataAlignable]):
             for cmp in cmp_indexes:
                 index_vars = cmp[1]
                 for var in index_vars.values():
-                    indexed_dims_sizes.update(var.sizes)
+                    indexed_dims_sizes |= var.sizes
 
             for dim, size in unindexed_dims_sizes.items():
                 if indexed_dims_sizes.get(dim, -1) != size:
@@ -504,7 +499,7 @@ class Aligner(Generic[DataAlignable]):
             if obj_idx is not None:
                 if self.reindex[key]:
                     indexers = obj_idx.reindex_like(aligned_idx, **self.reindex_kwargs)
-                    dim_pos_indexers.update(indexers)
+                    dim_pos_indexers |= indexers
 
         return dim_pos_indexers
 
@@ -947,7 +942,7 @@ def _get_broadcast_dims_map_common_coords(args, exclude):
             if dim not in common_coords and dim not in exclude:
                 dims_map[dim] = arg.sizes[dim]
                 if dim in arg._indexes:
-                    common_coords.update(arg.xindexes.get_all_coords(dim))
+                    common_coords |= arg.xindexes.get_all_coords(dim)
 
     return dims_map, common_coords
 

@@ -658,16 +658,17 @@ def test_decode_cf(calendar) -> None:
         ds[v].attrs["units"] = "days since 2001-01-01"
         ds[v].attrs["calendar"] = calendar
 
-    if not has_cftime and calendar not in _STANDARD_CALENDARS:
-        with pytest.raises(ValueError):
-            ds = decode_cf(ds)
-    else:
+    if has_cftime or calendar in _STANDARD_CALENDARS:
         ds = decode_cf(ds)
 
-        if calendar not in _STANDARD_CALENDARS:
-            assert ds.test.dtype == np.dtype("O")
-        else:
+        if calendar in _STANDARD_CALENDARS:
             assert ds.test.dtype == np.dtype("M8[ns]")
+
+        else:
+            assert ds.test.dtype == np.dtype("O")
+    else:
+        with pytest.raises(ValueError):
+            ds = decode_cf(ds)
 
 
 def test_decode_cf_time_bounds() -> None:
@@ -719,10 +720,9 @@ def test_encode_time_bounds() -> None:
     ds.time.attrs = {"bounds": "time_bounds"}
     ds.time.encoding = {"calendar": "noleap", "units": "days since 2000-01-01"}
 
-    expected = {}
-    # expected['time'] = Variable(data=np.array([15]), dims=['time'])
-    expected["time_bounds"] = Variable(data=np.array([0, 31]), dims=["time_bounds"])
-
+    expected = {
+        "time_bounds": Variable(data=np.array([0, 31]), dims=["time_bounds"])
+    }
     encoded, _ = cf_encoder(ds.variables, ds.attrs)
     assert_equal(encoded["time_bounds"], expected["time_bounds"])
     assert "calendar" not in encoded["time_bounds"].attrs

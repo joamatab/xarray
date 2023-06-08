@@ -720,10 +720,7 @@ class DatasetIOBase:
     def test_vectorized_indexing_negative_step(self) -> None:
         # use dask explicitly when present
         open_kwargs: dict[str, Any] | None
-        if has_dask:
-            open_kwargs = {"chunks": {}}
-        else:
-            open_kwargs = None
+        open_kwargs = {"chunks": {}} if has_dask else None
         in_memory = create_test_data()
 
         def multiple_indexing(indexers):
@@ -1024,7 +1021,7 @@ class CFEncodedBase(DatasetIOBase):
 
     def test_coordinates_encoding(self) -> None:
         def equals_latlon(obj):
-            return obj == "lat lon" or obj == "lon lat"
+            return obj in ["lat lon", "lon lat"]
 
         original = Dataset(
             {"temp": ("x", [0, 1]), "precip": ("x", [0, -1])},
@@ -1292,11 +1289,10 @@ def create_tmp_files(
     nfiles: int, suffix: str = ".nc", allow_cleanup_failure: bool = False
 ) -> Iterator[list[str]]:
     with ExitStack() as stack:
-        files = [
+        yield [
             stack.enter_context(create_tmp_file(suffix, allow_cleanup_failure))
             for _ in range(nfiles)
         ]
-        yield files
 
 
 class NetCDF4Base(NetCDFBase):
@@ -3252,7 +3248,7 @@ def tmp_store(request, tmp_path):
         path = tmp_path / "store.zip"
         return ZipStore(path)
     elif request.param == "Dict":
-        return dict()
+        return {}
     else:
         raise ValueError("not supported")
 

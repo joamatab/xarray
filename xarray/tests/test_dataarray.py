@@ -163,8 +163,8 @@ class TestDataArray:
         }
         assert array.xindexes.keys() == expected_xindexes.keys()
         assert array.indexes.keys() == expected_indexes.keys()
-        assert all([isinstance(idx, pd.Index) for idx in array.indexes.values()])
-        assert all([isinstance(idx, Index) for idx in array.xindexes.values()])
+        assert all(isinstance(idx, pd.Index) for idx in array.indexes.values())
+        assert all(isinstance(idx, Index) for idx in array.xindexes.values())
         for k in expected_indexes:
             assert array.xindexes[k].equals(expected_xindexes[k])
             assert array.indexes[k].equals(expected_indexes[k])
@@ -3408,11 +3408,7 @@ class TestDataArray:
         if encoding:
             expected["encoding"] = encoding_data
 
-        if has_dask:
-            da = array.chunk()
-        else:
-            da = array
-
+        da = array.chunk() if has_dask else array
         if data == "array" or data is False:
             with raise_if_dask_computes():
                 actual = da.to_dict(encoding=encoding, data=data)
@@ -3463,7 +3459,7 @@ class TestDataArray:
         del expected_no_data["coords"]["x"]["data"]
         endiantype = "<U1" if sys.byteorder == "little" else ">U1"
         expected_no_data["coords"]["x"].update({"dtype": endiantype, "shape": (2,)})
-        expected_no_data.update({"dtype": "float64", "shape": (2, 3)})
+        expected_no_data |= {"dtype": "float64", "shape": (2, 3)}
         actual_no_data = da.to_dict(data=False, encoding=encoding)
         assert expected_no_data == actual_no_data
 
@@ -3716,7 +3712,7 @@ class TestDataArray:
         assert "" == array._title_for_slice()
         assert "c = 0" == array.isel(c=0)._title_for_slice()
         title = array.isel(b=1, c=0)._title_for_slice()
-        assert "b = 1, c = 0" == title or "c = 0, b = 1" == title
+        assert title in ["b = 1, c = 0", "c = 0, b = 1"]
 
         a2 = DataArray(np.ones((4, 1)), dims=["a", "b"])
         assert "" == a2._title_for_slice()
@@ -4125,11 +4121,7 @@ class TestDataArray:
             coords={"x": xcoord, "d": [0, 1]},
         )
 
-        if use_dask:
-            da = da_raw.chunk({"d": 1})
-        else:
-            da = da_raw
-
+        da = da_raw.chunk({"d": 1}) if use_dask else da_raw
         out = da.polyfit("x", 2)
         expected = DataArray(
             [[2e-28, 1e-15, 10], [1e-29, 2e-14, 30]],
@@ -4146,10 +4138,7 @@ class TestDataArray:
 
         # With NaN
         da_raw[0, 1:3] = np.nan
-        if use_dask:
-            da = da_raw.chunk({"d": 1})
-        else:
-            da = da_raw
+        da = da_raw.chunk({"d": 1}) if use_dask else da_raw
         out = da.polyfit("x", 2, skipna=True, cov=True)
         assert_allclose(out.polyfit_coefficients, expected, rtol=1e-3)
         assert "polyfit_covariance" in out
@@ -4761,19 +4750,16 @@ class TestReduce1D(TestReduce):
         nanindex: int | None,
         use_dask: bool,
     ) -> None:
-        if use_dask and not has_dask:
-            pytest.skip("requires dask")
-        if use_dask and x.dtype.kind == "M":
-            pytest.xfail("dask operation 'argmin' breaks when dtype is datetime64 (M)")
+        if use_dask:
+            if not has_dask:
+                pytest.skip("requires dask")
+            if x.dtype.kind == "M":
+                pytest.xfail("dask operation 'argmin' breaks when dtype is datetime64 (M)")
         ar0_raw = xr.DataArray(
             x, dims=["x"], coords={"x": np.arange(x.size) * 4}, attrs=self.attrs
         )
 
-        if use_dask:
-            ar0 = ar0_raw.chunk({})
-        else:
-            ar0 = ar0_raw
-
+        ar0 = ar0_raw.chunk({}) if use_dask else ar0_raw
         # dim doesn't exist
         with pytest.raises(KeyError):
             ar0.idxmin(dim="spam")
@@ -4830,11 +4816,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result4, expected3)
 
         # Float fill_value
-        if hasna:
-            fill_value_5 = -1.1
-        else:
-            fill_value_5 = 1
-
+        fill_value_5 = -1.1 if hasna else 1
         expected5 = (coordarr1 * fill_value_5).isel(x=minindex, drop=True)
         expected5.name = "x"
 
@@ -4842,11 +4824,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result5, expected5)
 
         # Integer fill_value
-        if hasna:
-            fill_value_6 = -1
-        else:
-            fill_value_6 = 1
-
+        fill_value_6 = -1 if hasna else 1
         expected6 = (coordarr1 * fill_value_6).isel(x=minindex, drop=True)
         expected6.name = "x"
 
@@ -4854,11 +4832,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result6, expected6)
 
         # Complex fill_value
-        if hasna:
-            fill_value_7 = -1j
-        else:
-            fill_value_7 = 1
-
+        fill_value_7 = -1j if hasna else 1
         expected7 = (coordarr1 * fill_value_7).isel(x=minindex, drop=True)
         expected7.name = "x"
 
@@ -4874,19 +4848,16 @@ class TestReduce1D(TestReduce):
         nanindex: int | None,
         use_dask: bool,
     ) -> None:
-        if use_dask and not has_dask:
-            pytest.skip("requires dask")
-        if use_dask and x.dtype.kind == "M":
-            pytest.xfail("dask operation 'argmax' breaks when dtype is datetime64 (M)")
+        if use_dask:
+            if not has_dask:
+                pytest.skip("requires dask")
+            if x.dtype.kind == "M":
+                pytest.xfail("dask operation 'argmax' breaks when dtype is datetime64 (M)")
         ar0_raw = xr.DataArray(
             x, dims=["x"], coords={"x": np.arange(x.size) * 4}, attrs=self.attrs
         )
 
-        if use_dask:
-            ar0 = ar0_raw.chunk({})
-        else:
-            ar0 = ar0_raw
-
+        ar0 = ar0_raw.chunk({}) if use_dask else ar0_raw
         # dim doesn't exist
         with pytest.raises(KeyError):
             ar0.idxmax(dim="spam")
@@ -4943,11 +4914,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result4, expected3)
 
         # Float fill_value
-        if hasna:
-            fill_value_5 = -1.1
-        else:
-            fill_value_5 = 1
-
+        fill_value_5 = -1.1 if hasna else 1
         expected5 = (coordarr1 * fill_value_5).isel(x=maxindex, drop=True)
         expected5.name = "x"
 
@@ -4955,11 +4922,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result5, expected5)
 
         # Integer fill_value
-        if hasna:
-            fill_value_6 = -1
-        else:
-            fill_value_6 = 1
-
+        fill_value_6 = -1 if hasna else 1
         expected6 = (coordarr1 * fill_value_6).isel(x=maxindex, drop=True)
         expected6.name = "x"
 
@@ -4967,11 +4930,7 @@ class TestReduce1D(TestReduce):
         assert_identical(result6, expected6)
 
         # Complex fill_value
-        if hasna:
-            fill_value_7 = -1j
-        else:
-            fill_value_7 = 1
-
+        fill_value_7 = -1j if hasna else 1
         expected7 = (coordarr1 * fill_value_7).isel(x=maxindex, drop=True)
         expected7.name = "x"
 

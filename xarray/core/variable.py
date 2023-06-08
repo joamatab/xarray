@@ -133,9 +133,7 @@ def as_variable(obj, name=None) -> Variable | IndexVariable:
         except (TypeError, ValueError) as error:
             # use .format() instead of % because it handles tuples consistently
             raise error.__class__(
-                "Could not convert tuple of form "
-                "(dims, data[, attrs, encoding]): "
-                "{} to Variable.".format(obj)
+                f"Could not convert tuple of form (dims, data[, attrs, encoding]): {obj} to Variable."
             )
     elif utils.is_scalar(obj):
         obj = Variable([], obj)
@@ -179,9 +177,7 @@ def _maybe_wrap_data(data):
     NumpyArrayAdapter, PandasIndexingAdapter and LazilyIndexedArray should
     all pass through unmodified.
     """
-    if isinstance(data, pd.Index):
-        return PandasIndexingAdapter(data)
-    return data
+    return PandasIndexingAdapter(data) if isinstance(data, pd.Index) else data
 
 
 def _as_nanosecond_precision(data):
@@ -577,10 +573,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         return normalize_token((type(self), self._dims, self.data, self._attrs))
 
     def __dask_graph__(self):
-        if is_duck_dask_array(self._data):
-            return self._data.__dask_graph__()
-        else:
-            return None
+        return self._data.__dask_graph__() if is_duck_dask_array(self._data) else None
 
     def __dask_keys__(self):
         return self._data.__dask_keys__()
@@ -648,17 +641,15 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
             "dims": self.dims,
             "attrs": decode_numpy_dict_values(self.attrs),
         }
-        if data is not False:
-            if data in [True, "list"]:
-                item["data"] = ensure_us_time_resolution(self.to_numpy()).tolist()
-            elif data == "array":
-                item["data"] = ensure_us_time_resolution(self.data)
-            else:
-                msg = 'data argument must be bool, "list", or "array"'
-                raise ValueError(msg)
+        if data is False:
+            item |= {"dtype": str(self.dtype), "shape": self.shape}
 
+        elif data in [True, "list"]:
+            item["data"] = ensure_us_time_resolution(self.to_numpy()).tolist()
+        elif data == "array":
+            item["data"] = ensure_us_time_resolution(self.data)
         else:
-            item.update({"dtype": str(self.dtype), "shape": self.shape})
+            raise ValueError('data argument must be bool, "list", or "array"')
 
         if encoding:
             item["encoding"] = dict(self.encoding)
@@ -675,10 +666,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         self._dims = self._parse_dimensions(value)
 
     def _parse_dimensions(self, dims: str | Iterable[Hashable]) -> tuple[Hashable, ...]:
-        if isinstance(dims, str):
-            dims = (dims,)
-        else:
-            dims = tuple(dims)
+        dims = (dims, ) if isinstance(dims, str) else tuple(dims)
         if len(dims) != self.ndim:
             raise ValueError(
                 f"dimensions {dims} must have the same length as the "
@@ -766,8 +754,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
                         k = np.asarray(k)
                     if k.ndim > 1:
                         raise IndexError(
-                            "Unlabeled multi-dimensional array cannot be "
-                            "used for indexing: {}".format(k)
+                            f"Unlabeled multi-dimensional array cannot be used for indexing: {k}"
                         )
                 if k.dtype.kind == "b":
                     if self.shape[self.get_axis_num(dim)] != len(k):
@@ -776,10 +763,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
                             "with shape {:s}.".format(len(k), str(self.shape))
                         )
                     if k.ndim > 1:
-                        raise IndexError(
-                            "{}-dimensional boolean indexing is "
-                            "not supported. ".format(k.ndim)
-                        )
+                        raise IndexError(f"{k.ndim}-dimensional boolean indexing is not supported. ")
                     if is_duck_dask_array(k.data):
                         raise KeyError(
                             "Indexing with a boolean dask array is not allowed. "
@@ -1085,9 +1069,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
             ndata = as_compatible_data(data)
             if self.shape != ndata.shape:
                 raise ValueError(
-                    "Data shape {} must match shape of object {}".format(
-                        ndata.shape, self.shape
-                    )
+                    f"Data shape {ndata.shape} must match shape of object {self.shape}"
                 )
 
         attrs = copy.deepcopy(self._attrs, memo) if deep else copy.copy(self._attrs)
@@ -1158,7 +1140,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         xarray.unify_chunks
         """
         if hasattr(self._data, "chunks"):
-            return Frozen({dim: c for dim, c in zip(self.dims, self.data.chunks)})
+            return Frozen(dict(zip(self.dims, self.data.chunks)))
         else:
             return {}
 
@@ -1237,11 +1219,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
             )
             chunks = {}
 
-        if isinstance(chunks, (float, str, int, tuple, list)):
-            # TODO we shouldn't assume here that other chunkmanagers can handle these types
-            # TODO should we call normalize_chunks here?
-            pass  # dask.array.from_array can handle these directly
-        else:
+        if not isinstance(chunks, (float, str, int, tuple, list)):
             chunks = either_dict_or_kwargs(chunks, chunks_kwargs, "chunk")
 
         if utils.is_dict_like(chunks):
@@ -1664,7 +1642,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         --------
         numpy.transpose
         """
-        if len(dims) == 0:
+        if not dims:
             dims = self.dims[::-1]
         else:
             dims = tuple(infix_dims(dims, self.dims, missing_dims))
@@ -1705,8 +1683,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         if shape is None and utils.is_dict_like(dims):
             shape = dims.values()
 
-        missing_dims = set(self.dims) - set(dims)
-        if missing_dims:
+        if missing_dims := set(self.dims) - set(dims):
             raise ValueError(
                 f"new dimensions {dims!r} must be a superset of "
                 f"existing dimensions {self.dims!r}"
@@ -1741,7 +1718,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
                 "name as an existing dimension"
             )
 
-        if len(dims) == 0:
+        if not dims:
             # don't stack
             return self.copy(deep=False)
 
@@ -2504,11 +2481,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         if keep_attrs is None:
             keep_attrs = _get_keep_attrs(default=True)
 
-        if keep_attrs:
-            _attrs = self.attrs
-        else:
-            _attrs = None
-
+        _attrs = self.attrs if keep_attrs else None
         if not windows:
             return self._replace(attrs=_attrs)
 
@@ -2562,15 +2535,11 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
                 pad = window * n - size
                 if pad < 0:
                     pad += window
-                if side[d] == "left":
-                    pad_width = {d: (0, pad)}
-                else:
-                    pad_width = {d: (pad, 0)}
+                pad_width = {d: (0, pad)} if side[d] == "left" else {d: (pad, 0)}
                 variable = variable.pad(pad_width, mode="constant")
             else:
                 raise TypeError(
-                    "{} is invalid for boundary. Valid option is 'exact', "
-                    "'trim' and 'pad'".format(boundary[d])
+                    f"{boundary[d]} is invalid for boundary. Valid option is 'exact', 'trim' and 'pad'"
                 )
 
         shape = []
@@ -2579,8 +2548,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
         for i, d in enumerate(variable.dims):
             if d in windows:
                 size = variable.shape[i]
-                shape.append(int(size / windows[d]))
-                shape.append(windows[d])
+                shape.extend((int(size / windows[d]), windows[d]))
                 axis_count += 1
                 axes.append(i + axis_count)
             else:
@@ -2704,8 +2672,7 @@ class Variable(AbstractArray, NdimSizeLenMixin, VariableArithmetic):
             new_data = (
                 f(self_data, other_data) if not reflexive else f(other_data, self_data)
             )
-        result = Variable(dims, new_data, attrs=attrs)
-        return result
+        return Variable(dims, new_data, attrs=attrs)
 
     def _inplace_binary_op(self, other, f):
         if isinstance(other, xr.Dataset):
@@ -2992,17 +2959,15 @@ class IndexVariable(Variable):
                 "variables be IndexVariable objects"
             )
 
-        indexes = [v._data.array for v in variables]
-
-        if not indexes:
-            data = []
-        else:
+        if indexes := [v._data.array for v in variables]:
             data = indexes[0].append(indexes[1:])
 
             if positions is not None:
                 indices = nputils.inverse_permutation(np.concatenate(positions))
                 data = data.take(indices)
 
+        else:
+            data = []
         # keep as str if possible as pandas.Index uses object (converts to numpy array)
         data = maybe_coerce_to_str(data, variables)
 
@@ -3046,9 +3011,7 @@ class IndexVariable(Variable):
             ndata = as_compatible_data(data)
             if self.shape != ndata.shape:
                 raise ValueError(
-                    "Data shape {} must match shape of object {}".format(
-                        ndata.shape, self.shape
-                    )
+                    f"Data shape {ndata.shape} must match shape of object {self.shape}"
                 )
 
         attrs = copy.deepcopy(self._attrs) if deep else copy.copy(self._attrs)
@@ -3084,27 +3047,21 @@ class IndexVariable(Variable):
         # a pandas multi-index level variable.
         assert self.ndim == 1
         index = self._data.array
-        if isinstance(index, pd.MultiIndex):
-            # set default names for multi-index unnamed levels so that
-            # we can safely rename dimension / coordinate later
-            valid_level_names = [
-                name or f"{self.dims[0]}_level_{i}"
-                for i, name in enumerate(index.names)
-            ]
-            index = index.set_names(valid_level_names)
-        else:
-            index = index.set_names(self.name)
-        return index
+        if not isinstance(index, pd.MultiIndex):
+            return index.set_names(self.name)
+        # set default names for multi-index unnamed levels so that
+        # we can safely rename dimension / coordinate later
+        valid_level_names = [
+            name or f"{self.dims[0]}_level_{i}"
+            for i, name in enumerate(index.names)
+        ]
+        return index.set_names(valid_level_names)
 
     def to_index(self) -> pd.Index:
         """Convert this variable to a pandas.Index"""
         index = self._to_index()
         level = getattr(self._data, "level", None)
-        if level is not None:
-            # return multi-index level converted to a single index
-            return index.get_level_values(level)
-        else:
-            return index
+        return index.get_level_values(level) if level is not None else index
 
     @property
     def level_names(self) -> list[str] | None:
@@ -3112,10 +3069,7 @@ class IndexVariable(Variable):
         MultiIndex.
         """
         index = self.to_index()
-        if isinstance(index, pd.MultiIndex):
-            return index.names
-        else:
-            return None
+        return index.names if isinstance(index, pd.MultiIndex) else None
 
     def get_level_variable(self, level):
         """Return a new IndexVariable from a given MultiIndex level."""

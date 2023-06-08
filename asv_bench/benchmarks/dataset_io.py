@@ -45,7 +45,7 @@ class IOSingleNetCDF:
             "lat": self.ny / 3,
         }
 
-        self.time_chunks = {"time": int(self.nt / 36)}
+        self.time_chunks = {"time": self.nt // 36}
 
         times = pd.date_range("1970-01-01", periods=self.nt, freq="D")
         lons = xr.DataArray(
@@ -260,7 +260,7 @@ class IOMultipleNetCDF:
             "lat": self.ny / 3,
         }
 
-        self.time_chunks = {"time": int(self.nt / 36)}
+        self.time_chunks = {"time": self.nt // 36}
 
         self.time_vars = np.split(
             pd.date_range("1970-01-01", periods=self.nt, freq="D"), self.nfiles
@@ -551,6 +551,8 @@ class IOReadCustomEngine:
             def _raw_indexing_method(self, key: tuple):
                 raise NotImplementedError
 
+
+
         @dataclass
         class PerformanceStore(xr.backends.common.AbstractWritableDataStore):
             manager: xr.backends.CachingFileManager
@@ -563,20 +565,13 @@ class IOReadCustomEngine:
 
             @classmethod
             def open(
-                cls,
-                filename: str | os.PathLike | None,
-                mode: str = "r",
-                lock: xr.backends.locks.SerializableLock | None = None,
-                autoclose: bool = False,
-            ):
-                if lock is None:
-                    if mode == "r":
-                        locker = xr.backends.locks.SerializableLock()
-                    else:
-                        locker = xr.backends.locks.SerializableLock()
-                else:
-                    locker = lock
-
+                        cls,
+                        filename: str | os.PathLike | None,
+                        mode: str = "r",
+                        lock: xr.backends.locks.SerializableLock | None = None,
+                        autoclose: bool = False,
+                    ):
+                locker = xr.backends.locks.SerializableLock() if lock is None else lock
                 manager = xr.backends.CachingFileManager(
                     xr.backends.DummyFileManager,
                     filename,
@@ -609,27 +604,30 @@ class IOReadCustomEngine:
 
                 return variables, attributes
 
+
+
+
         class PerformanceBackend(xr.backends.BackendEntrypoint):
             def open_dataset(
-                self,
-                filename_or_obj: str | os.PathLike | None,
-                drop_variables: tuple[str] = None,
-                *,
-                mask_and_scale=True,
-                decode_times=True,
-                concat_characters=True,
-                decode_coords=True,
-                use_cftime=None,
-                decode_timedelta=None,
-                lock=None,
-                **kwargs,
-            ) -> xr.Dataset:
+                        self,
+                        filename_or_obj: str | os.PathLike | None,
+                        drop_variables: tuple[str] = None,
+                        *,
+                        mask_and_scale=True,
+                        decode_times=True,
+                        concat_characters=True,
+                        decode_coords=True,
+                        use_cftime=None,
+                        decode_timedelta=None,
+                        lock=None,
+                        **kwargs,
+                    ) -> xr.Dataset:
                 filename_or_obj = xr.backends.common._normalize_path(filename_or_obj)
                 store = PerformanceStore.open(filename_or_obj, lock=lock)
 
                 store_entrypoint = xr.backends.store.StoreBackendEntrypoint()
 
-                ds = store_entrypoint.open_dataset(
+                return store_entrypoint.open_dataset(
                     store,
                     mask_and_scale=mask_and_scale,
                     decode_times=decode_times,
@@ -639,7 +637,7 @@ class IOReadCustomEngine:
                     use_cftime=use_cftime,
                     decode_timedelta=decode_timedelta,
                 )
-                return ds
+
 
         self.engine = PerformanceBackend
 

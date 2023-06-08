@@ -123,16 +123,7 @@ def _netcdf_to_numpy_timeunit(units: str) -> str:
 
 
 def _ensure_padded_year(ref_date: str) -> str:
-    # Reference dates without a padded year (e.g. since 1-1-1 or since 2-3-4)
-    # are ambiguous (is it YMD or DMY?). This can lead to some very odd
-    # behaviour e.g. pandas (via dateutil) passes '1-1-1 00:00:0.0' as
-    # '2001-01-01 00:00:00' (because it assumes a) DMY and b) that year 1 is
-    # shorthand for 2001 (like 02 would be shorthand for year 2002)).
-
-    # Here we ensure that there is always a four-digit year, with the
-    # assumption being that year comes first if we get something ambiguous.
-    matches_year = re.match(r".*\d{4}.*", ref_date)
-    if matches_year:
+    if matches_year := re.match(r".*\d{4}.*", ref_date):
         # all good, return
         return ref_date
 
@@ -141,7 +132,7 @@ def _ensure_padded_year(ref_date: str) -> str:
     matches_start_digits = re.match(r"(\d+)(.*)", ref_date)
     if not matches_start_digits:
         raise ValueError(f"invalid reference date for time units: {ref_date}")
-    ref_year, everything_else = (s for s in matches_start_digits.groups())
+    ref_year, everything_else = iter(matches_start_digits.groups())
     ref_date_padded = f"{int(ref_year):04d}{everything_else}"
 
     warning_msg = (
@@ -305,9 +296,8 @@ def decode_cf_datetime(
                         SerializationWarning,
                         stacklevel=3,
                     )
-            else:
-                if _is_standard_calendar(calendar):
-                    dates = cftime_to_nptime(dates)
+            elif _is_standard_calendar(calendar):
+                dates = cftime_to_nptime(dates)
     elif use_cftime:
         dates = _decode_datetime_with_cftime(flat_num_dates, units, calendar)
     else:
@@ -358,10 +348,16 @@ def _infer_time_units_from_diff(unique_timedeltas) -> str:
         time_units = _NETCDF_TIME_UNITS_NUMPY
         unit_timedelta = _unit_timedelta_numpy
         zero_timedelta = np.timedelta64(0, "ns")
-    for time_unit in time_units:
-        if np.all(unique_timedeltas % unit_timedelta(time_unit) == zero_timedelta):
-            return time_unit
-    return "seconds"
+    return next(
+        (
+            time_unit
+            for time_unit in time_units
+            if np.all(
+                unique_timedeltas % unit_timedelta(time_unit) == zero_timedelta
+            )
+        ),
+        "seconds",
+    )
 
 
 def infer_calendar_name(dates) -> CFCalendar:
@@ -452,8 +448,7 @@ def cftime_to_nptime(times, raise_on_invalid: bool = True) -> np.ndarray:
         except ValueError as e:
             if raise_on_invalid:
                 raise ValueError(
-                    "Cannot convert date {} to a date in the "
-                    "standard calendar.  Reason: {}.".format(t, e)
+                    f"Cannot convert date {t} to a date in the standard calendar.  Reason: {e}."
                 )
             else:
                 dt = "NaT"
@@ -485,10 +480,7 @@ def convert_times(times, date_type, raise_on_invalid: bool = True) -> np.ndarray
         except ValueError as e:
             if raise_on_invalid:
                 raise ValueError(
-                    "Cannot convert date {} to a date in the "
-                    "{} calendar.  Reason: {}.".format(
-                        t, date_type(2000, 1, 1).calendar, e
-                    )
+                    f"Cannot convert date {t} to a date in the {date_type(2000, 1, 1).calendar} calendar.  Reason: {e}."
                 )
             else:
                 dt = np.NaN
@@ -699,64 +691,60 @@ class CFDatetimeCoder(VariableCoder):
         self.use_cftime = use_cftime
 
     def encode(self, variable: Variable, name: T_Name = None) -> Variable:
-        if np.issubdtype(
+        if not np.issubdtype(
             variable.data.dtype, np.datetime64
-        ) or contains_cftime_datetimes(variable):
-            dims, data, attrs, encoding = unpack_for_encoding(variable)
-
-            (data, units, calendar) = encode_cf_datetime(
-                data, encoding.pop("units", None), encoding.pop("calendar", None)
-            )
-            safe_setitem(attrs, "units", units, name=name)
-            safe_setitem(attrs, "calendar", calendar, name=name)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        ) and not contains_cftime_datetimes(variable):
             return variable
+        dims, data, attrs, encoding = unpack_for_encoding(variable)
+
+        (data, units, calendar) = encode_cf_datetime(
+            data, encoding.pop("units", None), encoding.pop("calendar", None)
+        )
+        safe_setitem(attrs, "units", units, name=name)
+        safe_setitem(attrs, "calendar", calendar, name=name)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
     def decode(self, variable: Variable, name: T_Name = None) -> Variable:
         units = variable.attrs.get("units", None)
-        if isinstance(units, str) and "since" in units:
-            dims, data, attrs, encoding = unpack_for_decoding(variable)
-
-            units = pop_to(attrs, encoding, "units")
-            calendar = pop_to(attrs, encoding, "calendar")
-            dtype = _decode_cf_datetime_dtype(data, units, calendar, self.use_cftime)
-            transform = partial(
-                decode_cf_datetime,
-                units=units,
-                calendar=calendar,
-                use_cftime=self.use_cftime,
-            )
-            data = lazy_elemwise_func(data, transform, dtype)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if not isinstance(units, str) or "since" not in units:
             return variable
+        dims, data, attrs, encoding = unpack_for_decoding(variable)
+
+        units = pop_to(attrs, encoding, "units")
+        calendar = pop_to(attrs, encoding, "calendar")
+        dtype = _decode_cf_datetime_dtype(data, units, calendar, self.use_cftime)
+        transform = partial(
+            decode_cf_datetime,
+            units=units,
+            calendar=calendar,
+            use_cftime=self.use_cftime,
+        )
+        data = lazy_elemwise_func(data, transform, dtype)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
 
 class CFTimedeltaCoder(VariableCoder):
     def encode(self, variable: Variable, name: T_Name = None) -> Variable:
-        if np.issubdtype(variable.data.dtype, np.timedelta64):
-            dims, data, attrs, encoding = unpack_for_encoding(variable)
-
-            data, units = encode_cf_timedelta(data, encoding.pop("units", None))
-            safe_setitem(attrs, "units", units, name=name)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if not np.issubdtype(variable.data.dtype, np.timedelta64):
             return variable
+        dims, data, attrs, encoding = unpack_for_encoding(variable)
+
+        data, units = encode_cf_timedelta(data, encoding.pop("units", None))
+        safe_setitem(attrs, "units", units, name=name)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)
 
     def decode(self, variable: Variable, name: T_Name = None) -> Variable:
         units = variable.attrs.get("units", None)
-        if isinstance(units, str) and units in TIME_UNITS:
-            dims, data, attrs, encoding = unpack_for_decoding(variable)
-
-            units = pop_to(attrs, encoding, "units")
-            transform = partial(decode_cf_timedelta, units=units)
-            dtype = np.dtype("timedelta64[ns]")
-            data = lazy_elemwise_func(data, transform, dtype=dtype)
-
-            return Variable(dims, data, attrs, encoding, fastpath=True)
-        else:
+        if not isinstance(units, str) or units not in TIME_UNITS:
             return variable
+        dims, data, attrs, encoding = unpack_for_decoding(variable)
+
+        units = pop_to(attrs, encoding, "units")
+        transform = partial(decode_cf_timedelta, units=units)
+        dtype = np.dtype("timedelta64[ns]")
+        data = lazy_elemwise_func(data, transform, dtype=dtype)
+
+        return Variable(dims, data, attrs, encoding, fastpath=True)

@@ -169,32 +169,30 @@ def char_to_bytes(arr):
         # can't make an S0 dtype
         return np.zeros(arr.shape[:-1], dtype=np.string_)
 
-    if is_chunked_array(arr):
-        chunkmanager = get_chunked_array_type(arr)
-
-        if len(arr.chunks[-1]) > 1:
-            raise ValueError(
-                "cannot stacked dask character array with "
-                "multiple chunks in the last dimension: {}".format(arr)
-            )
-
-        dtype = np.dtype("S" + str(arr.shape[-1]))
-        return chunkmanager.map_blocks(
-            _numpy_char_to_bytes,
-            arr,
-            dtype=dtype,
-            chunks=arr.chunks[:-1],
-            drop_axis=[arr.ndim - 1],
-        )
-    else:
+    if not is_chunked_array(arr):
         return StackedBytesArray(arr)
+    chunkmanager = get_chunked_array_type(arr)
+
+    if len(arr.chunks[-1]) > 1:
+        raise ValueError(
+            f"cannot stacked dask character array with multiple chunks in the last dimension: {arr}"
+        )
+
+    dtype = np.dtype(f"S{str(arr.shape[-1])}")
+    return chunkmanager.map_blocks(
+        _numpy_char_to_bytes,
+        arr,
+        dtype=dtype,
+        chunks=arr.chunks[:-1],
+        drop_axis=[arr.ndim - 1],
+    )
 
 
 def _numpy_char_to_bytes(arr):
     """Like netCDF4.chartostring, but faster and more flexible."""
     # based on: http://stackoverflow.com/a/10984878/809705
     arr = np.array(arr, copy=False, order="C")
-    dtype = "S" + str(arr.shape[-1])
+    dtype = f"S{str(arr.shape[-1])}"
     return arr.view(dtype).reshape(arr.shape[:-1])
 
 
@@ -222,7 +220,7 @@ class StackedBytesArray(indexing.ExplicitlyIndexedNDArrayMixin):
 
     @property
     def dtype(self):
-        return np.dtype("S" + str(self.array.shape[-1]))
+        return np.dtype(f"S{str(self.array.shape[-1])}")
 
     @property
     def shape(self) -> tuple[int, ...]:

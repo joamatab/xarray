@@ -54,12 +54,11 @@ def load_chunkmanagers(
         entrypoint.name: entrypoint.load() for entrypoint in entrypoints
     }
 
-    available_chunkmanagers = {
+    return {
         name: chunkmanager()
         for name, chunkmanager in loaded_entrypoints.items()
         if chunkmanager.available
     }
-    return available_chunkmanagers
 
 
 def guess_chunkmanager(
@@ -120,7 +119,7 @@ def get_chunked_array_type(*args) -> ChunkManagerEntrypoint:
         raise TypeError(
             f"Mixing chunked array types is not supported, but received multiple types: {chunked_array_types}"
         )
-    elif len(chunked_array_types) == 0:
+    elif not chunked_array_types:
         raise TypeError("Expected a chunked array but none were found")
 
     # iterate over defined chunk managers, seeing if each recognises this array type
